@@ -1,0 +1,18 @@
+[package]
+name = "nslogger_client"
+version = "0.1.0"
+authors = ["Guillaume Godet-Bar <guillaume.godetbar@gmail.com>"]
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+async-dnssd = "0.2.0"
+futures = "*"
+tokio-core = "*"
+mio  = "*"
+bitflags = "*"
+bincode = "*"
+serde_derive = "*"
+openssl = "*"
+byteorder = "*"
