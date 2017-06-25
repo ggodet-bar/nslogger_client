@@ -46,7 +46,7 @@ mod tests {
     fn creates_logger_instance() {
         let mut log = Logger::new() ;
         //thread::sleep(Duration::from_secs(5)) ;
-        //log.set_remote_host("192.168.0.8", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
+        log.set_remote_host("192.168.0.8", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
         log.log_b(Some(Domain::App), Level::Warning, "test") ;
         log.log_b(Some(Domain::DB), Level::Error, "test1") ;
         log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
@@ -58,8 +58,10 @@ mod tests {
         //thread::sleep(Duration::from_secs(100)) ;
     }
 
-    #[test]
+    //#[test]
     fn flushes_log_messages() {
+        // TODO a better approach would probably be to write a small thread that crashes, with a
+        // message that has to be passed before the crash?
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
         log.log_b(Some(Domain::App), Level::Warning, "flush test") ;
@@ -85,7 +87,7 @@ mod tests {
 
 
             let mut resolve = browse_result.resolve(&handle).unwrap() ;
-            resolve.and_then( |v| { println!("{:?}", v) ; Ok( () ) }) ;
+            resolve.and_then( |v| { println!("{:?}", v) ; Ok( () ) }).poll() ;
             //core.run(resolve.and_then( |v| {
                 //println!("{:?}", v) ;
             //})) ;

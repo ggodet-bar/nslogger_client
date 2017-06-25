@@ -148,7 +148,7 @@ impl LogMessage {
         new_message.add_int32(MessagePartKey::MESSAGE_TYPE, message_type as u32) ;
         new_message.add_int32(MessagePartKey::MESSAGE_SEQ, sequence_number) ;
         new_message.add_timestamp(0) ;
-        new_message.add_thread_id(thread::current().id()) ;
+        new_message.add_thread_id(thread::current()) ;
 
         new_message
     }
@@ -203,10 +203,13 @@ impl LogMessage {
         self.add_int16(MessagePartKey::TIMESTAMP_MS, (actual_value % 1000) as u16) ;
     }
 
-    fn add_thread_id(&mut self, thread_id:thread::ThreadId) {
-        // TODO
+    fn add_thread_id(&mut self, thread:thread::Thread) {
+        let thread_name = match thread.name() {
+            Some(name) => name.to_string(),
+            None => format!("{:?}", thread.id())
+        } ;
 
-        self.add_string(MessagePartKey::THREAD_ID, "Thread ID") ;
+        self.add_string(MessagePartKey::THREAD_ID, &thread_name) ;
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
@@ -340,12 +343,13 @@ impl LoggerState
 
         //close_bonjour() ;
 
+        let remote_host = self.remote_host.as_ref().unwrap() ;
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "connecting to {}:{}", self.remote_host.as_ref().unwrap(), self.remote_port.unwrap()) ;
+            info!(target:"NSLogger", "connecting to {}:{}", remote_host, self.remote_port.unwrap()) ;
         }
 
-        let connect_string = format!("{}:{}", self.remote_host.as_ref().unwrap(), self.remote_port.unwrap()) ;
-        let stream = match TcpStream::connect("192.168.0.8:60582") {
+        let connect_string = format!("{}:{}", remote_host, self.remote_port.unwrap()) ;
+        let stream = match TcpStream::connect(connect_string) {
             Ok(s) => s,
             Err(e) => return Err("error occurred during tcp stream connection")
         } ;
@@ -357,12 +361,13 @@ impl LoggerState
                 info!(target:"NSLogger", "activating SSL connection") ;
             }
 
-            //let mut builder = SslConnectorBuilder::new(SslMethod::tls()).unwrap() ;
+            let mut ssl_connector_builder = SslConnectorBuilder::new(SslMethod::tls()).unwrap() ;
 
-            //builder.builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE) ;
+            ssl_connector_builder.builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE) ;
+            ssl_connector_builder.builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_NONE, |_,_| { true }) ;
 
-            //let connector = builder.build() ;
-            //let mut stream = connector.connect(self.remote_host.as_ref().unwrap(), self.remote_socket.as_ref().unwrap()).unwrap();
+            let connector = ssl_connector_builder.build() ;
+            let mut stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(self.remote_socket.as_ref().unwrap()).unwrap();
 
             self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
 
@@ -749,7 +754,7 @@ impl Logger {
         log_message.add_string(MessagePartKey::MESSAGE, message) ;
 
         // TODO Create a channel instead a sharing a lock access
-        let needs_flush = !(self.shared_state.lock().unwrap().options | FLUSH_EACH_MESSAGE).is_empty() ;
+        let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
         let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
         if needs_flush {
             flush_rx = log_message.flush_rx.take() ;
