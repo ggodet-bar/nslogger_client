@@ -45,15 +45,29 @@ mod tests {
     #[test]
     fn creates_logger_instance() {
         let mut log = Logger::new() ;
-        thread::sleep(Duration::from_secs(5)) ;
+        //thread::sleep(Duration::from_secs(5)) ;
         //log.set_remote_host("192.168.0.8", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
-        log.log_b(Domain::App, Level::Warning, "test") ;
-        log.log_b(Domain::DB, Level::Error, "test1") ;
-        log.log_b(Domain::DB, Level::Debug, "test2") ;
-        log.log_b(Domain::DB, Level::Warning, "test") ;
-        log.log_b(Domain::DB, Level::Error, "test1") ;
-        log.log_b(Domain::DB, Level::Debug, "test2") ;
-        assert_eq!(1,2) ;
+        log.log_b(Some(Domain::App), Level::Warning, "test") ;
+        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
+        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
+        log.log_b(Some(Domain::DB), Level::Warning, "test") ;
+        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
+        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
+        log.log_b(Some(Domain::Custom("MyCustomDomain".to_string())), Level::Debug, "Tag test!") ;
+        log.log_c("Just a simple message") ;
+        //thread::sleep(Duration::from_secs(100)) ;
+    }
+
+    #[test]
+    fn flushes_log_messages() {
+        let mut log = Logger::new() ;
+        log.set_message_flushing(true) ;
+        log.log_b(Some(Domain::App), Level::Warning, "test") ;
+        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
+        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
+        log.log_b(Some(Domain::DB), Level::Warning, "test") ;
+        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
+        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
     }
 
 

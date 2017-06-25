@@ -23,11 +23,13 @@ use openssl ;
 use futures::Future ;
 use futures::future::Either ;
 use std::time ;
+use std::fmt ;
 
 use byteorder::{BigEndian, WriteBytesExt} ;
 
 const DEBUG_LOGGER:bool = true ;
 
+#[derive(Debug)]
 pub enum Domain {
   App,
   View,
@@ -41,6 +43,12 @@ pub enum Domain {
   DB,
   IO,
   Custom(String)
+}
+
+impl fmt::Display for Domain {
+    fn fmt(&self, f:&mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Copy,Clone)]
@@ -119,12 +127,20 @@ struct LogMessage {
     pub sequence_number:u32,
     data:Vec<u8>,
     data_used:u32,
-    part_count:u16
+    part_count:u16,
+    flush_rx:Option<mpsc::Receiver<bool>>,
+    flush_tx:mpsc::Sender<bool>
 }
 
 impl LogMessage {
     pub fn new(message_type:LogMessageType, sequence_number:u32) -> LogMessage {
-        let mut new_message = LogMessage { sequence_number:sequence_number, data:Vec::with_capacity(256), data_used:6, part_count:0 } ;
+        let (flush_tx, flush_rx) = mpsc::channel() ;
+        let mut new_message = LogMessage { sequence_number:sequence_number,
+                                           data:Vec::with_capacity(256),
+                                           data_used:6,
+                                           part_count:0,
+                                           flush_rx: Some(flush_rx),
+                                           flush_tx: flush_tx } ;
 
         new_message.add_int32(MessagePartKey::MESSAGE_TYPE, message_type as u32) ;
         new_message.add_int32(MessagePartKey::MESSAGE_SEQ, sequence_number) ;
@@ -204,6 +220,15 @@ impl LogMessage {
 
         return header ;
     }
+
+
+    fn prepare_flush(&self) {
+        // TODO
+    }
+
+    fn wait_for_flush(&self) {
+        // TODO
+    }
 }
 
 struct LoggerState
@@ -271,7 +296,13 @@ impl LoggerState
                         let mut tcp_stream = self.remote_socket.as_ref().unwrap() ;
                         tcp_stream.write_all(message_bytes).expect("Write to TCP stream failed") ;
                     }
+
+                    match message.flush_rx {
+                        None => message.flush_tx.send(true).unwrap(),
+                        _ => ()
+                    }
                 }
+
 
                 self.log_messages.remove(0) ;
             }
@@ -543,14 +574,18 @@ impl MessageWorker {
             } else {
                 "_nslogger-ssl._tcp"
             } ;
+            info!(target:"NSLogger", "foo1") ;
 
             self.shared_state.lock().unwrap().bonjour_service_type = Some(service_type.to_string()) ;
 
+            info!(target:"NSLogger", "foo2") ;
             let mut core = Core::new().unwrap() ;
             let handle = core.handle() ;
 
+            info!(target:"NSLogger", "foo3") ;
             let mut listener = async_dnssd::browse(Interface::Any, service_type, None, &handle).unwrap() ;
 
+            info!(target:"NSLogger", "foo4") ;
             let timeout = Timeout::new(Duration::from_secs(5), &handle).unwrap() ;
             match core.run(listener.into_future().select2(timeout)) {
                 Ok( either ) => {
@@ -664,8 +699,17 @@ impl Logger {
         } ;
     }
 
+    pub fn set_message_flushing(&mut self, flush_each_message:bool) {
+        let mut local_state = self.shared_state.lock().unwrap() ;
+        if flush_each_message {
+            local_state.options = local_state.options | FLUSH_EACH_MESSAGE ;
+        } else {
+            local_state.options = local_state.options - FLUSH_EACH_MESSAGE ;
+        }
+    }
+
     // FIXME Eventually take some time to fix the method dispatch issue (using macros?)!
-    pub fn log_a(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>, domain:Domain, level:Level, message:&str) {
+    pub fn log_a(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level, message:&str) {
         info!(target:"NSLogger", "entering log_a") ;
         self.start_logging_thread_if_needed() ;
 
@@ -678,14 +722,51 @@ impl Logger {
         let mut log_message = LogMessage::new(LogMessageType::LOG, self.shared_state.lock().unwrap().next_sequence_numbers.fetch_add(1, Ordering::SeqCst)) ;
         log_message.add_int16(MessagePartKey::LEVEL, level as u16) ;
 
+        if let Some(path) = filename {
+            log_message.add_string(MessagePartKey::FILENAME, path.to_str().expect("Invalid path encoding")) ;
+
+            if let Some(nb) = line_number {
+                log_message.add_int32(MessagePartKey::LINENUMBER, nb as u32) ;
+            }
+        }
+
+        if let Some(method_name) = method {
+            log_message.add_string(MessagePartKey::FUNCTIONNAME, method_name) ;
+        }
+
+        if let Some(domain_tag) = domain {
+            match domain_tag {
+                Domain::Custom(custom_name) => if !custom_name.is_empty() {
+                    log_message.add_string(MessagePartKey::TAG, &custom_name) ;
+                },
+                _ => log_message.add_string(MessagePartKey::TAG, &domain_tag.to_string())
+            } ;
+        } ;
+
+
         log_message.add_string(MessagePartKey::MESSAGE, message) ;
 
+        // TODO Create a channel instead a sharing a lock access
+        let needs_flush = !(self.shared_state.lock().unwrap().options | FLUSH_EACH_MESSAGE).is_empty() ;
+        let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
+        if needs_flush {
+            flush_rx = log_message.flush_rx.take() ;
+        }
+
         self.message_sender.send(HandlerMessageType::ADD_LOG(log_message)) ;
+
+        if needs_flush {
+            flush_rx.unwrap().recv() ; // Waiting until the flush is done
+        }
         info!(target:"NSLogger", "Exiting log_a") ;
     }
 
-    pub fn log_b(&mut self, domain: Domain, level: Level, message:&str) {
+    pub fn log_b(&mut self, domain: Option<Domain>, level: Level, message:&str) {
         self.log_a(None, None, None, domain, level, message) ;
+    }
+
+    pub fn log_c(&mut self, message:&str) {
+        self.log_b(None, Level::Error, message) ;
     }
 
     fn start_logging_thread_if_needed(&mut self) {
