@@ -62,12 +62,12 @@ mod tests {
     fn flushes_log_messages() {
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
-        log.log_b(Some(Domain::App), Level::Warning, "test") ;
-        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
-        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
-        log.log_b(Some(Domain::DB), Level::Warning, "test") ;
-        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
-        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
+        log.log_b(Some(Domain::App), Level::Warning, "flush test") ;
+        log.log_b(Some(Domain::DB), Level::Error, "flush test1") ;
+        log.log_b(Some(Domain::DB), Level::Debug, "flush test2") ;
+        log.log_b(Some(Domain::DB), Level::Warning, "flush test") ;
+        log.log_b(Some(Domain::DB), Level::Error, "flush test1") ;
+        log.log_b(Some(Domain::DB), Level::Debug, "flush test2") ;
     }
 
 

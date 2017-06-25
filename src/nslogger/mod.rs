@@ -24,10 +24,13 @@ use futures::Future ;
 use futures::future::Either ;
 use std::time ;
 use std::fmt ;
+use env_logger ;
+use std::sync::{Once, ONCE_INIT};
 
 use byteorder::{BigEndian, WriteBytesExt} ;
 
 const DEBUG_LOGGER:bool = true ;
+static START: Once = ONCE_INIT ;
 
 #[derive(Debug)]
 pub enum Domain {
@@ -492,6 +495,8 @@ impl MessageHandler {
                 }
             }
         } ;
+
+        info!(target:"NSLogger", "leaving message handler loop") ;
     }
 }
 
@@ -574,18 +579,13 @@ impl MessageWorker {
             } else {
                 "_nslogger-ssl._tcp"
             } ;
-            info!(target:"NSLogger", "foo1") ;
 
             self.shared_state.lock().unwrap().bonjour_service_type = Some(service_type.to_string()) ;
-
-            info!(target:"NSLogger", "foo2") ;
             let mut core = Core::new().unwrap() ;
             let handle = core.handle() ;
 
-            info!(target:"NSLogger", "foo3") ;
             let mut listener = async_dnssd::browse(Interface::Any, service_type, None, &handle).unwrap() ;
 
-            info!(target:"NSLogger", "foo4") ;
             let timeout = Timeout::new(Duration::from_secs(5), &handle).unwrap() ;
             match core.run(listener.into_future().select2(timeout)) {
                 Ok( either ) => {
@@ -641,8 +641,10 @@ pub struct Logger {
 impl Logger {
 
     pub fn new() -> Logger {
-        use env_logger ;
-        env_logger::init().unwrap() ;
+        START.call_once(|| {
+
+            env_logger::init().unwrap() ;
+        }) ;
         info!(target:"NSLogger", "NSLogger client started") ;
         let (message_sender, message_receiver) = mpsc::channel() ;
         let sender_clone = message_sender.clone() ;
@@ -756,7 +758,10 @@ impl Logger {
         self.message_sender.send(HandlerMessageType::ADD_LOG(log_message)) ;
 
         if needs_flush {
-            flush_rx.unwrap().recv() ; // Waiting until the flush is done
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "waiting for message flush") ;
+            }
+            flush_rx.unwrap().recv() ;
         }
         info!(target:"NSLogger", "Exiting log_a") ;
     }
@@ -805,5 +810,14 @@ impl Logger {
         }
 
         info!(target:"NSLogger", "Worker is ready and running") ;
+    }
+}
+
+impl Drop for Logger {
+    fn drop(&mut self) {
+        info!(target:"NSLogger", "calling drop for logger instance") ;
+
+        self.message_sender.send(HandlerMessageType::QUIT) ;
+
     }
 }
