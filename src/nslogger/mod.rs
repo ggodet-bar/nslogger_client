@@ -24,7 +24,7 @@ use futures::Future ;
 use futures::future::Either ;
 use std::time ;
 
-use byteorder::{LittleEndian, WriteBytesExt} ;
+use byteorder::{BigEndian, WriteBytesExt} ;
 
 const DEBUG_LOGGER:bool = true ;
 
@@ -119,12 +119,12 @@ struct LogMessage {
     pub sequence_number:u32,
     data:Vec<u8>,
     data_used:u32,
-    part_count:u32
+    part_count:u16
 }
 
 impl LogMessage {
     pub fn new(message_type:LogMessageType, sequence_number:u32) -> LogMessage {
-        let mut new_message = LogMessage { sequence_number:sequence_number, data:Vec::with_capacity(256), data_used:0, part_count:0 } ;
+        let mut new_message = LogMessage { sequence_number:sequence_number, data:Vec::with_capacity(256), data_used:6, part_count:0 } ;
 
         new_message.add_int32(MessagePartKey::MESSAGE_TYPE, message_type as u32) ;
         new_message.add_int32(MessagePartKey::MESSAGE_SEQ, sequence_number) ;
@@ -138,7 +138,7 @@ impl LogMessage {
         self.data_used += 10 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(MessagePartType::INT64 as u8).unwrap() ;
-        self.data.write_u64::<LittleEndian>(value as u64).unwrap() ;
+        self.data.write_u64::<BigEndian>(value as u64).unwrap() ;
         self.part_count += 1 ;
     }
 
@@ -146,7 +146,7 @@ impl LogMessage {
         self.data_used += 6 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(MessagePartType::INT32 as u8).unwrap() ;
-        self.data.write_u32::<LittleEndian>(value as u32).unwrap() ;
+        self.data.write_u32::<BigEndian>(value as u32).unwrap() ;
         self.part_count += 1 ;
     }
 
@@ -154,7 +154,7 @@ impl LogMessage {
         self.data_used += 4 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(MessagePartType::INT16 as u8).unwrap() ;
-        self.data.write_u16::<LittleEndian>(value as u16).unwrap() ;
+        self.data.write_u16::<BigEndian>(value as u16).unwrap() ;
         self.part_count += 1 ;
     }
 
@@ -163,7 +163,7 @@ impl LogMessage {
         self.data_used += (6 + length) as u32 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(data_type as u8).unwrap() ;
-        self.data.write_u32::<LittleEndian>(length as u32).unwrap() ;
+        self.data.write_u32::<BigEndian>(length as u32).unwrap() ;
         self.data.extend_from_slice(bytes) ;
         self.part_count += 1 ;
     }
@@ -190,8 +190,19 @@ impl LogMessage {
         self.add_string(MessagePartKey::THREAD_ID, "Thread ID") ;
     }
 
-    pub fn get_bytes(&self) -> &[u8] {
-        self.data.as_slice()
+    pub fn get_bytes(&self) -> Vec<u8> {
+        let mut header = Vec::with_capacity(6 + self.data.len()) ;
+        let size = self.data_used - 4 ;
+        header.write_u32::<BigEndian>(size) ;
+        header.write_u16::<BigEndian>(self.part_count) ;
+
+        if self.data_used == self.data.len() as u32 {
+            return self.data.clone() ;
+        }
+
+        header.extend_from_slice(&self.data) ;
+
+        return header ;
     }
 }
 
@@ -249,8 +260,11 @@ impl LoggerState
                     let message = self.log_messages.first().unwrap() ;
                     info!(target:"NSLogger", "processing message {}", &message.sequence_number) ;
 
-                    let message_bytes = message.get_bytes() ;
+                    let message_vec = message.get_bytes() ;
+                    let message_bytes = message_vec.as_slice() ;
                     let length = message_bytes.len() ;
+                    info!(target:"NSLogger", "length: {}", length) ;
+                    info!(target:"NSLogger", "bytes: {:?}", message_bytes) ;
                     let mut remaining = length ;
 
                     {
@@ -297,7 +311,7 @@ impl LoggerState
         }
 
         let connect_string = format!("{}:{}", self.remote_host.as_ref().unwrap(), self.remote_port.unwrap()) ;
-        let stream = match TcpStream::connect("192.168.0.8:58889") {
+        let stream = match TcpStream::connect("192.168.0.8:60582") {
             Ok(s) => s,
             Err(e) => return Err("error occurred during tcp stream connection")
         } ;

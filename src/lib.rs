@@ -53,7 +53,6 @@ mod tests {
         log.log_b(Domain::DB, Level::Warning, "test") ;
         log.log_b(Domain::DB, Level::Error, "test1") ;
         log.log_b(Domain::DB, Level::Debug, "test2") ;
-        thread::sleep(Duration::from_secs(100)) ;
         assert_eq!(1,2) ;
     }
 
