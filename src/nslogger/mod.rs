@@ -127,16 +127,16 @@ enum MessagePartType {
 }
 
 #[derive(Debug)]
-struct SocketWrapper {
-    pub tcp_socket:Option<TcpStream>,
-    pub ssl_socket:Option<SslStream<TcpStream>>,
+enum SocketWrapper {
+    Tcp(TcpStream),
+    Ssl(SslStream<TcpStream>),
 }
 
 impl SocketWrapper {
     pub fn write_all(&mut self, buf:&[u8]) -> io::Result<()> {
-        match self.ssl_socket {
-            Some(ref mut inner) => return inner.write_all(buf),
-            None => return self.tcp_socket.as_ref().unwrap().write_all(buf)
+        match *self {
+            SocketWrapper::Tcp(ref mut stream) => return stream.write_all(buf),
+            SocketWrapper::Ssl(ref mut stream) => return stream.write_all(buf)
         }
     }
 }
@@ -371,7 +371,7 @@ impl LoggerState
         } ;
 
         info!(target:"NSLogger", "{:?}", &stream) ;
-        self.remote_socket = Some(SocketWrapper{ tcp_socket: Some(stream), ssl_socket: None }) ;
+        self.remote_socket = Some(SocketWrapper::Tcp(stream)) ;
         if !(self.options | USE_SSL).is_empty() {
             if DEBUG_LOGGER {
                 info!(target:"NSLogger", "activating SSL connection") ;
@@ -383,9 +383,10 @@ impl LoggerState
             ssl_connector_builder.builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_NONE, |_,_| { true }) ;
 
             let connector = ssl_connector_builder.build() ;
-            let mut stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(self.remote_socket.as_mut().unwrap().tcp_socket.take().unwrap()).unwrap();
-
-            self.remote_socket = Some(SocketWrapper{ tcp_socket:None, ssl_socket:Some(stream) }) ;
+            if let SocketWrapper::Tcp(inner_stream) = self.remote_socket.take().unwrap() {
+                let mut stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(inner_stream).unwrap();
+                self.remote_socket = Some(SocketWrapper::Ssl(stream)) ;
+            }
 
             self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
 
