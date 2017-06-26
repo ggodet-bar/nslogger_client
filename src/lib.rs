@@ -41,6 +41,13 @@ mod tests {
     use std::thread ;
 
     #[test]
+    fn connects_via_bonjour_with_ssl() {
+        let mut log = Logger::new() ;
+        log.set_message_flushing(true) ;
+        log.log_b(Some(Domain::App), Level::Warning, "test") ;
+    }
+
+    #[test]
     fn creates_logger_instance() {
         let mut log = Logger::new() ;
         //thread::sleep(Duration::from_secs(5)) ;
@@ -113,13 +120,15 @@ mod tests {
     #[test]
     fn logs_binary_data() {
         let bytes:[u8;8] = [ 0x6c, 0x6f, 0x67, 0x20, 0x74, 0x65, 0x73, 0x74 ] ;
+        // should read 'log test'
+
         let mut log = Logger::new() ;
         log.set_remote_host("192.168.0.8", 50000, true) ;
         log.set_message_flushing(true) ;
         log.log_data(None, None, None, None, Level::Warning, &bytes) ;
     }
 
-    //#[test]
+    #[test]
     fn it_works() {
 
         thread::spawn(move || {
@@ -132,8 +141,8 @@ mod tests {
             println!("{:?}", browse_result) ;
 
 
-            let mut resolve = browse_result.resolve(&handle).unwrap() ;
-            resolve.and_then( |v| { println!("{:?}", v) ; Ok( () ) }).poll() ;
+            //let mut resolve = browse_result.resolve(&handle).unwrap() ;
+            //resolve.and_then( |v| { println!("{:?}", v) ; Ok( () ) }).poll() ;
             //core.run(resolve.and_then( |v| {
                 //println!("{:?}", v) ;
             //})) ;
@@ -146,9 +155,7 @@ mod tests {
             //}) ;
 
             Ok( () )
-        })) ;
-        }) ;
-        thread::sleep(Duration::from_secs(100)) ;
-        assert_eq!(1, 2) ;
+        })).unwrap() ;
+        }).join().expect("Join issue") ;
     }
 }

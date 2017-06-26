@@ -28,7 +28,8 @@ use std::fmt ;
 use env_logger ;
 use std::sync::{Once, ONCE_INIT};
 
-use byteorder::{BigEndian, WriteBytesExt} ;
+use byteorder::{ByteOrder, BigEndian, WriteBytesExt} ;
+use byteorder ;
 
 const DEBUG_LOGGER:bool = true ;
 static START: Once = ONCE_INIT ;
@@ -655,14 +656,17 @@ impl MessageWorker {
                                 Ok( (resolve_result, resolve) ) => {
                                     let resolve_details = resolve_result.unwrap() ;
                                     info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
-                                    for host_addr in format!("{}:{}", resolve_details.host_target, resolve_details.port).to_socket_addrs().unwrap() {
+                                    let mut port_buf = [0;4] ;
+                                    byteorder::NetworkEndian::write_u16(&mut port_buf, resolve_details.port) ;
+                                    let actual_port = byteorder::NativeEndian::read_u16(&port_buf) ;
+                                    for host_addr in format!("{}:{}", resolve_details.host_target, actual_port).to_socket_addrs().unwrap() {
 
 
-                                        if !host_addr.ip().is_global() {
+                                        if !host_addr.ip().is_global() && host_addr.ip().is_ipv4() {
                                             let ip_address = format!("{}", host_addr.ip()) ;
                                             info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
                                             self.shared_state.lock().unwrap().remote_host = Some(ip_address) ;
-                                            self.shared_state.lock().unwrap().remote_port = Some(resolve_details.port) ;
+                                            self.shared_state.lock().unwrap().remote_port = Some(actual_port) ;
                                             break ;
                                         }
 
