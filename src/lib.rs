@@ -13,16 +13,14 @@ extern crate bitflags ;
 extern crate log ;
 extern crate env_logger ;
 
-#[macro_use]
-extern crate serde_derive ;
-extern crate bincode ;
-
 extern crate async_dnssd ;
 extern crate futures;
 extern crate tokio_core;
 extern crate openssl ;
 
 extern crate byteorder ;
+
+extern crate chrono ;
 
 pub mod nslogger ;
 
@@ -73,6 +71,27 @@ mod tests {
         log.log_b(Some(Domain::DB), Level::Debug, "flush test2") ;
     }
 
+    #[test]
+    fn logs_mark(){
+        let mut log = Logger::new() ;
+        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_message_flushing(true) ;
+        log.log_b(Some(Domain::App), Level::Warning, "before mark 1") ;
+        log.log_b(Some(Domain::DB), Level::Error, "before mark 2") ;
+        log.log_mark(Some("this is a mark")) ;
+        log.log_b(Some(Domain::DB), Level::Debug, "after mark") ;
+    }
+
+    #[test]
+    fn logs_empty_mark(){
+        let mut log = Logger::new() ;
+        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_message_flushing(true) ;
+        log.log_b(Some(Domain::App), Level::Warning, "before mark 1") ;
+        log.log_b(Some(Domain::DB), Level::Error, "before mark 2") ;
+        log.log_mark(None) ;
+        log.log_b(Some(Domain::DB), Level::Debug, "after mark") ;
+    }
 
     //#[test]
     fn it_works() {

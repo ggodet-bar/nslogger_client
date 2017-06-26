@@ -744,7 +744,6 @@ impl Logger {
             return ;
         }
 
-        info!(target:"NSLogger", "[{:?}] About to create log message", thread::current().id()) ;
         let mut log_message = LogMessage::new(LogMessageType::LOG, self.shared_state.lock().unwrap().next_sequence_numbers.fetch_add(1, Ordering::SeqCst)) ;
         log_message.add_int16(MessagePartKey::LEVEL, level as u16) ;
 
@@ -772,7 +771,6 @@ impl Logger {
 
         log_message.add_string(MessagePartKey::MESSAGE, message) ;
 
-        // TODO Create a channel instead a sharing a lock access
         let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
         let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
         if needs_flush {
@@ -796,6 +794,53 @@ impl Logger {
 
     pub fn log_c(&mut self, message:&str) {
         self.log_b(None, Level::Error, message) ;
+    }
+
+	/// Log a mark to the desktop viewer.
+    ///
+    /// Marks are important points that you can jump to directly in the desktop viewer. Message is
+    /// optional, if null or empty it will be replaced with the current date / time
+    ///
+	/// * `message`	optional message
+	///
+    pub fn log_mark(&mut self, message:Option<&str>) {
+        use chrono ;
+        info!(target:"NSLogger", "entering log_mark") ;
+        self.start_logging_thread_if_needed() ;
+        if !self.shared_state.lock().unwrap().is_handler_running {
+            info!(target:"NSLogger", "Early return") ;
+            return ;
+        }
+
+        let mut log_message = LogMessage::new(LogMessageType::MARK, self.shared_state.lock().unwrap().next_sequence_numbers.fetch_add(1, Ordering::SeqCst)) ;
+        log_message.add_int16(MessagePartKey::LEVEL, 0) ;
+
+        let mark_message = match message {
+            Some(inner) => inner.to_string(),
+            None => {
+                let time_now = chrono::Utc::now() ;
+
+                time_now.format("%b %-d, %-I:%M:%S").to_string()
+            }
+        } ;
+
+        log_message.add_string(MessagePartKey::MESSAGE, &mark_message) ;
+
+        let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
+        let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
+        if needs_flush {
+            flush_rx = log_message.flush_rx.take() ;
+        }
+
+        self.message_sender.send(HandlerMessageType::ADD_LOG(log_message)) ;
+
+        if needs_flush {
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "waiting for message flush") ;
+            }
+            flush_rx.unwrap().recv() ;
+        }
+        info!(target:"NSLogger", "leaving log_mark") ;
     }
 
     fn start_logging_thread_if_needed(&mut self) {
