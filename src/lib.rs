@@ -110,6 +110,15 @@ mod tests {
         log.log_image(None, None, None, None, Level::Warning, &buffer) ;
     }
 
+    #[test]
+    fn logs_binary_data() {
+        let bytes:[u8;8] = [ 0x6c, 0x6f, 0x67, 0x20, 0x74, 0x65, 0x73, 0x74 ] ;
+        let mut log = Logger::new() ;
+        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_message_flushing(true) ;
+        log.log_data(None, None, None, None, Level::Warning, &bytes) ;
+    }
+
     //#[test]
     fn it_works() {
 

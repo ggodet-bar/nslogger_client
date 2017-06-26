@@ -839,6 +839,30 @@ impl Logger {
         info!(target:"NSLogger", "leaving log_mark") ;
     }
 
+    pub fn log_data(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>,
+                     domain:Option<Domain>, level:Level, data:&[u8]) {
+        info!(target:"NSLogger", "entering log_data") ;
+        self.start_logging_thread_if_needed() ;
+        if !self.shared_state.lock().unwrap().is_handler_running {
+            info!(target:"NSLogger", "Early return") ;
+            return ;
+        }
+
+        let mut log_message = LogMessage::with_header(LogMessageType::LOG,
+                                                      self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
+                                                      filename,
+                                                      line_number,
+                                                      method,
+                                                      domain,
+                                                      level) ;
+
+        log_message.add_binary_data(MessagePartKey::MESSAGE, data) ;
+
+        self.send_and_flush_if_required(log_message) ;
+
+        info!(target:"NSLogger", "leaving log_data") ;
+    }
+
     pub fn log_image(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>,
                      domain:Option<Domain>, level:Level, data:&[u8]) {
 
