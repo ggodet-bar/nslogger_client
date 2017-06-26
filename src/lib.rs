@@ -58,11 +58,12 @@ mod tests {
         //thread::sleep(Duration::from_secs(100)) ;
     }
 
-    //#[test]
+    #[test]
     fn flushes_log_messages() {
         // TODO a better approach would probably be to write a small thread that crashes, with a
         // message that has to be passed before the crash?
         let mut log = Logger::new() ;
+        log.set_remote_host("192.168.0.8", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
         log.set_message_flushing(true) ;
         log.log_b(Some(Domain::App), Level::Warning, "flush test") ;
         log.log_b(Some(Domain::DB), Level::Error, "flush test1") ;

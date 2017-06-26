@@ -9,6 +9,7 @@ use std::time::Duration ;
 use std::path::Path ;
 use std::collections::HashMap ;
 use std::io::{Write, Read} ;
+use std::io ;
 
 use tokio_core::reactor::{Core,Timeout} ;
 use futures::Async ;
@@ -18,7 +19,7 @@ use async_dnssd::{Interface, BrowseResult} ;
 use std::net ;
 use std::net::ToSocketAddrs ;
 use std::net::TcpStream ;
-use openssl::ssl::{SslMethod, SslConnectorBuilder};
+use openssl::ssl::{SslMethod, SslConnectorBuilder, SslStream} ;
 use openssl ;
 use futures::Future ;
 use futures::future::Either ;
@@ -123,6 +124,21 @@ enum MessagePartType {
     INT32 = 3,
     INT64 = 4,
     IMAGE = 5,      // An image, stored in PNG format
+}
+
+#[derive(Debug)]
+struct SocketWrapper {
+    pub tcp_socket:Option<TcpStream>,
+    pub ssl_socket:Option<SslStream<TcpStream>>,
+}
+
+impl SocketWrapper {
+    pub fn write_all(&mut self, buf:&[u8]) -> io::Result<()> {
+        match self.ssl_socket {
+            Some(ref mut inner) => return inner.write_all(buf),
+            None => return self.tcp_socket.as_ref().unwrap().write_all(buf)
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -254,7 +270,7 @@ struct LoggerState
     pub remote_port:Option<u16>,
 
     /// the remote socket we're talking to
-    pub remote_socket:Option<TcpStream>,
+    pub remote_socket:Option<SocketWrapper>,
 
     /// file or socket output stream
     //pub write_stream:Option<Write + 'static:std::marker::Sized>,
@@ -299,7 +315,7 @@ impl LoggerState
                     let mut remaining = length ;
 
                     {
-                        let mut tcp_stream = self.remote_socket.as_ref().unwrap() ;
+                        let mut tcp_stream = self.remote_socket.as_mut().unwrap() ;
                         tcp_stream.write_all(message_bytes).expect("Write to TCP stream failed") ;
                     }
 
@@ -355,7 +371,7 @@ impl LoggerState
         } ;
 
         info!(target:"NSLogger", "{:?}", &stream) ;
-        self.remote_socket = Some(stream) ;
+        self.remote_socket = Some(SocketWrapper{ tcp_socket: Some(stream), ssl_socket: None }) ;
         if !(self.options | USE_SSL).is_empty() {
             if DEBUG_LOGGER {
                 info!(target:"NSLogger", "activating SSL connection") ;
@@ -367,7 +383,9 @@ impl LoggerState
             ssl_connector_builder.builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_NONE, |_,_| { true }) ;
 
             let connector = ssl_connector_builder.build() ;
-            let mut stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(self.remote_socket.as_ref().unwrap()).unwrap();
+            let mut stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(self.remote_socket.as_mut().unwrap().tcp_socket.take().unwrap()).unwrap();
+
+            self.remote_socket = Some(SocketWrapper{ tcp_socket:None, ssl_socket:Some(stream) }) ;
 
             self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
 
