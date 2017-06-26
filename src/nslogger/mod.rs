@@ -169,6 +169,35 @@ impl LogMessage {
         new_message
     }
 
+    pub fn with_header(message_type:LogMessageType, sequence_number:u32, filename:Option<&Path>,
+                       line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level) -> LogMessage {
+        let mut new_message = LogMessage::new(message_type, sequence_number) ;
+
+        new_message.add_int16(MessagePartKey::LEVEL, level as u16) ;
+
+        if let Some(path) = filename {
+            new_message.add_string(MessagePartKey::FILENAME, path.to_str().expect("Invalid path encoding")) ;
+
+            if let Some(nb) = line_number {
+                new_message.add_int32(MessagePartKey::LINENUMBER, nb as u32) ;
+            }
+        }
+
+        if let Some(method_name) = method {
+            new_message.add_string(MessagePartKey::FUNCTIONNAME, method_name) ;
+        }
+
+        if let Some(domain_tag) = domain {
+            match domain_tag {
+                Domain::Custom(custom_name) => if !custom_name.is_empty() {
+                    new_message.add_string(MessagePartKey::TAG, &custom_name) ;
+                },
+                _ => new_message.add_string(MessagePartKey::TAG, &domain_tag.to_string())
+            } ;
+        } ;
+        new_message
+    }
+
     pub fn add_int64(&mut self, key:MessagePartKey, value:u64) {
         self.data_used += 10 ;
         self.data.write_u8(key as u8).unwrap() ;
@@ -191,6 +220,14 @@ impl LogMessage {
         self.data.write_u8(MessagePartType::INT16 as u8).unwrap() ;
         self.data.write_u16::<BigEndian>(value as u16).unwrap() ;
         self.part_count += 1 ;
+    }
+
+    pub fn add_binary_data(&mut self, key:MessagePartKey, bytes:&[u8]) {
+        self.add_bytes(key, MessagePartType::BINARY, bytes) ;
+    }
+
+    pub fn add_image_data(&mut self, key:MessagePartKey, bytes:&[u8]) {
+        self.add_bytes(key, MessagePartType::IMAGE, bytes) ;
     }
 
     fn add_bytes(&mut self, key:MessagePartKey, data_type:MessagePartType, bytes:&[u8]) {
@@ -242,15 +279,6 @@ impl LogMessage {
 
         return header ;
     }
-
-
-    fn prepare_flush(&self) {
-        // TODO
-    }
-
-    fn wait_for_flush(&self) {
-        // TODO
-    }
 }
 
 struct LoggerState
@@ -275,7 +303,7 @@ struct LoggerState
     /// file or socket output stream
     //pub write_stream:Option<Write + 'static:std::marker::Sized>,
 
-    pub next_sequence_numbers:AtomicU32,
+    next_sequence_numbers:AtomicU32,
     pub log_messages:Vec<LogMessage>,
     pub message_sender:mpsc::Sender<HandlerMessageType>
 }
@@ -338,7 +366,7 @@ impl LoggerState
             info!(target:"NSLogger", "pushing client info to front of queue") ;
         }
 
-        let mut message = LogMessage::new(LogMessageType::CLIENT_INFO, self.next_sequence_numbers.fetch_add(1, Ordering::SeqCst)) ;
+        let mut message = LogMessage::new(LogMessageType::CLIENT_INFO, self.get_and_increment_sequence_number()) ;
         self.log_messages.insert(0, message) ;
         self.is_client_info_added = true ;
     }
@@ -423,6 +451,10 @@ impl LoggerState
             //loggingThreadHandler.sendMessage(loggingThreadHandler.obtainMessage(MSG_CONNECT_COMPLETE));
         //}
         Ok( () )
+    }
+
+    pub fn get_and_increment_sequence_number(&mut self) -> u32 {
+        return self.next_sequence_numbers.fetch_add(1, Ordering::SeqCst) ;
     }
 }
 
@@ -744,47 +776,18 @@ impl Logger {
             return ;
         }
 
-        let mut log_message = LogMessage::new(LogMessageType::LOG, self.shared_state.lock().unwrap().next_sequence_numbers.fetch_add(1, Ordering::SeqCst)) ;
-        log_message.add_int16(MessagePartKey::LEVEL, level as u16) ;
-
-        if let Some(path) = filename {
-            log_message.add_string(MessagePartKey::FILENAME, path.to_str().expect("Invalid path encoding")) ;
-
-            if let Some(nb) = line_number {
-                log_message.add_int32(MessagePartKey::LINENUMBER, nb as u32) ;
-            }
-        }
-
-        if let Some(method_name) = method {
-            log_message.add_string(MessagePartKey::FUNCTIONNAME, method_name) ;
-        }
-
-        if let Some(domain_tag) = domain {
-            match domain_tag {
-                Domain::Custom(custom_name) => if !custom_name.is_empty() {
-                    log_message.add_string(MessagePartKey::TAG, &custom_name) ;
-                },
-                _ => log_message.add_string(MessagePartKey::TAG, &domain_tag.to_string())
-            } ;
-        } ;
+        let mut log_message = LogMessage::with_header(LogMessageType::LOG,
+                                                      self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
+                                                      filename,
+                                                      line_number,
+                                                      method,
+                                                      domain,
+                                                      level) ;
 
 
         log_message.add_string(MessagePartKey::MESSAGE, message) ;
 
-        let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
-        let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
-        if needs_flush {
-            flush_rx = log_message.flush_rx.take() ;
-        }
-
-        self.message_sender.send(HandlerMessageType::ADD_LOG(log_message)) ;
-
-        if needs_flush {
-            if DEBUG_LOGGER {
-                info!(target:"NSLogger", "waiting for message flush") ;
-            }
-            flush_rx.unwrap().recv() ;
-        }
+        self.send_and_flush_if_required(log_message) ;
         info!(target:"NSLogger", "Exiting log_a") ;
     }
 
@@ -812,8 +815,13 @@ impl Logger {
             return ;
         }
 
-        let mut log_message = LogMessage::new(LogMessageType::MARK, self.shared_state.lock().unwrap().next_sequence_numbers.fetch_add(1, Ordering::SeqCst)) ;
-        log_message.add_int16(MessagePartKey::LEVEL, 0) ;
+        let mut log_message = LogMessage::with_header(LogMessageType::MARK,
+                                                      self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
+                                                      None,
+                                                      None,
+                                                      None,
+                                                      None,
+                                                      Level::Error) ;
 
         let mark_message = match message {
             Some(inner) => inner.to_string(),
@@ -826,21 +834,34 @@ impl Logger {
 
         log_message.add_string(MessagePartKey::MESSAGE, &mark_message) ;
 
-        let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
-        let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
-        if needs_flush {
-            flush_rx = log_message.flush_rx.take() ;
-        }
+        self.send_and_flush_if_required(log_message) ;
 
-        self.message_sender.send(HandlerMessageType::ADD_LOG(log_message)) ;
-
-        if needs_flush {
-            if DEBUG_LOGGER {
-                info!(target:"NSLogger", "waiting for message flush") ;
-            }
-            flush_rx.unwrap().recv() ;
-        }
         info!(target:"NSLogger", "leaving log_mark") ;
+    }
+
+    pub fn log_image(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>,
+                     domain:Option<Domain>, level:Level, data:&[u8]) {
+
+        info!(target:"NSLogger", "entering log_image") ;
+        self.start_logging_thread_if_needed() ;
+        if !self.shared_state.lock().unwrap().is_handler_running {
+            info!(target:"NSLogger", "Early return") ;
+            return ;
+        }
+
+        let mut log_message = LogMessage::with_header(LogMessageType::LOG,
+                                                      self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
+                                                      filename,
+                                                      line_number,
+                                                      method,
+                                                      domain,
+                                                      level) ;
+
+        log_message.add_image_data(MessagePartKey::MESSAGE, data) ;
+
+        self.send_and_flush_if_required(log_message) ;
+
+        info!(target:"NSLogger", "leaving log_image") ;
     }
 
     fn start_logging_thread_if_needed(&mut self) {
@@ -879,6 +900,23 @@ impl Logger {
         }
 
         info!(target:"NSLogger", "Worker is ready and running") ;
+    }
+
+    fn send_and_flush_if_required(&mut self, mut log_message:LogMessage) {
+        let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
+        let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
+        if needs_flush {
+            flush_rx = log_message.flush_rx.take() ;
+        }
+
+        self.message_sender.send(HandlerMessageType::ADD_LOG(log_message)) ;
+
+        if needs_flush {
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "waiting for message flush") ;
+            }
+            flush_rx.unwrap().recv() ;
+        }
     }
 }
 

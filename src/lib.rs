@@ -93,6 +93,23 @@ mod tests {
         log.log_b(Some(Domain::DB), Level::Debug, "after mark") ;
     }
 
+    #[test]
+    fn logs_image() {
+        use std::fs::File;
+        use std::env ;
+        use std::io::Read ;
+        let image_path = &env::current_dir().unwrap().join("tests/fixtures/zebra.png") ;
+        let mut file_handle = File::open(image_path).unwrap() ;
+        let mut buffer:Vec<u8> = vec![] ;
+
+        file_handle.read_to_end(&mut buffer).unwrap() ;
+
+        let mut log = Logger::new() ;
+        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_message_flushing(true) ;
+        log.log_image(None, None, None, None, Level::Warning, &buffer) ;
+    }
+
     //#[test]
     fn it_works() {
 

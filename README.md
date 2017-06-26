@@ -1,7 +1,7 @@
 Currently missing:
 
 - Bonjour connection
-- image, binary logs
+- binary logs
 - Dump to file
 - option changes
 - client info
