@@ -28,7 +28,7 @@ use std::fmt ;
 use env_logger ;
 use std::sync::{Once, ONCE_INIT};
 
-use byteorder::{ByteOrder, BigEndian, WriteBytesExt} ;
+use byteorder::{ByteOrder, NetworkEndian, WriteBytesExt} ;
 use byteorder ;
 
 const DEBUG_LOGGER:bool = true ;
@@ -203,7 +203,7 @@ impl LogMessage {
         self.data_used += 10 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(MessagePartType::INT64 as u8).unwrap() ;
-        self.data.write_u64::<BigEndian>(value as u64).unwrap() ;
+        self.data.write_u64::<NetworkEndian>(value as u64).unwrap() ;
         self.part_count += 1 ;
     }
 
@@ -211,7 +211,7 @@ impl LogMessage {
         self.data_used += 6 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(MessagePartType::INT32 as u8).unwrap() ;
-        self.data.write_u32::<BigEndian>(value as u32).unwrap() ;
+        self.data.write_u32::<NetworkEndian>(value as u32).unwrap() ;
         self.part_count += 1 ;
     }
 
@@ -219,7 +219,7 @@ impl LogMessage {
         self.data_used += 4 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(MessagePartType::INT16 as u8).unwrap() ;
-        self.data.write_u16::<BigEndian>(value as u16).unwrap() ;
+        self.data.write_u16::<NetworkEndian>(value as u16).unwrap() ;
         self.part_count += 1 ;
     }
 
@@ -236,7 +236,7 @@ impl LogMessage {
         self.data_used += (6 + length) as u32 ;
         self.data.write_u8(key as u8).unwrap() ;
         self.data.write_u8(data_type as u8).unwrap() ;
-        self.data.write_u32::<BigEndian>(length as u32).unwrap() ;
+        self.data.write_u32::<NetworkEndian>(length as u32).unwrap() ;
         self.data.extend_from_slice(bytes) ;
         self.part_count += 1 ;
     }
@@ -269,8 +269,8 @@ impl LogMessage {
     pub fn get_bytes(&self) -> Vec<u8> {
         let mut header = Vec::with_capacity(6 + self.data.len()) ;
         let size = self.data_used - 4 ;
-        header.write_u32::<BigEndian>(size) ;
-        header.write_u16::<BigEndian>(self.part_count) ;
+        header.write_u32::<NetworkEndian>(size) ;
+        header.write_u16::<NetworkEndian>(self.part_count) ;
 
         if self.data_used == self.data.len() as u32 {
             return self.data.clone() ;
