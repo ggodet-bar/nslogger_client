@@ -50,17 +50,22 @@ mod tests {
     #[test]
     fn creates_logger_instance() {
         let mut log = Logger::new() ;
-        //thread::sleep(Duration::from_secs(5)) ;
-        log.set_remote_host("192.168.0.8", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
         log.log_b(Some(Domain::App), Level::Warning, "test") ;
         log.log_b(Some(Domain::DB), Level::Error, "test1") ;
         log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
         log.log_b(Some(Domain::DB), Level::Warning, "test") ;
         log.log_b(Some(Domain::DB), Level::Error, "test1") ;
         log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
-        log.log_b(Some(Domain::Custom("MyCustomDomain".to_string())), Level::Debug, "Tag test!") ;
+        log.log_b(Some(Domain::Custom("MyCustomDomain")), Level::Debug, "Tag test!") ;
         log.log_c("Just a simple message") ;
         //thread::sleep(Duration::from_secs(100)) ;
+    }
+
+    #[test]
+    fn logs_empty_domain() {
+        let mut log = Logger::new() ;
+        log.set_message_flushing(true) ;
+        log.log_b(Some(Domain::Custom("")), Level::Warning, "no domain should appear") ;
     }
 
     #[test]
@@ -126,36 +131,5 @@ mod tests {
         log.set_remote_host("192.168.0.8", 50000, true) ;
         log.set_message_flushing(true) ;
         log.log_data(None, None, None, None, Level::Warning, &bytes) ;
-    }
-
-    #[test]
-    fn it_works() {
-
-        thread::spawn(move || {
-        let mut core = Core::new().unwrap() ;
-        let handle = core.handle() ;
-        let mut listener = async_dnssd::browse(Interface::Any, "_nslogger-ssl._tcp", None, &handle).unwrap() ;
-
-        println!("Running server") ;
-        core.run(listener.for_each( |browse_result| {
-            println!("{:?}", browse_result) ;
-
-
-            //let mut resolve = browse_result.resolve(&handle).unwrap() ;
-            //resolve.and_then( |v| { println!("{:?}", v) ; Ok( () ) }).poll() ;
-            //core.run(resolve.and_then( |v| {
-                //println!("{:?}", v) ;
-            //})) ;
-            //core.run(resolve.into_future()).for_each( |resolve_result| {
-                //let mut resolve = resolve_result ;
-                //println!("{:?}", resolve) ;
-            //}) ;
-            //resolve.for_each( |resolve_result| {
-                //println!("{:?}", resolve_result) ;
-            //}) ;
-
-            Ok( () )
-        })).unwrap() ;
-        }).join().expect("Join issue") ;
     }
 }

@@ -47,12 +47,15 @@ pub enum Domain {
   Cache,
   DB,
   IO,
-  Custom(String)
+  Custom(&'static str)
 }
 
 impl fmt::Display for Domain {
     fn fmt(&self, f:&mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        match *self {
+            Domain::Custom(ref custom_name) => write!(f, "{}", custom_name),
+            _ => write!(f, "{:?}", self)
+        }
     }
 }
 
@@ -189,12 +192,10 @@ impl LogMessage {
         }
 
         if let Some(domain_tag) = domain {
-            match domain_tag {
-                Domain::Custom(custom_name) => if !custom_name.is_empty() {
-                    new_message.add_string(MessagePartKey::TAG, &custom_name) ;
-                },
-                _ => new_message.add_string(MessagePartKey::TAG, &domain_tag.to_string())
-            } ;
+            let tag_string = domain_tag.to_string() ;
+            if !tag_string.is_empty() {
+                new_message.add_string(MessagePartKey::TAG, &tag_string) ;
+            }
         } ;
         new_message
     }
