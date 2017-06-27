@@ -56,7 +56,7 @@ mod tests {
         log.log_b(Some(Domain::DB), Level::Warning, "test") ;
         log.log_b(Some(Domain::DB), Level::Error, "test1") ;
         log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
-        log.log_b(Some(Domain::Custom("MyCustomDomain")), Level::Debug, "Tag test!") ;
+        log.log_b(Some(Domain::Custom("MyCustomDomain".to_string())), Level::Debug, "Tag test!") ;
         log.log_c("Just a simple message") ;
         //thread::sleep(Duration::from_secs(100)) ;
     }
@@ -65,7 +65,16 @@ mod tests {
     fn logs_empty_domain() {
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
-        log.log_b(Some(Domain::Custom("")), Level::Warning, "no domain should appear") ;
+        log.log_b(Some(Domain::Custom("".to_string())), Level::Warning, "no domain should appear") ;
+    }
+
+    #[test]
+    fn parses_domain_from_string() {
+        use std::str::FromStr ;
+        assert_eq!(Domain::App, Domain::from_str("App").unwrap()) ;
+        assert_eq!(Domain::DB, Domain::from_str("DB").unwrap()) ;
+        assert_eq!(Domain::Custom("CustomTag".to_string()), Domain::from_str("CustomTag").unwrap()) ;
+
     }
 
     #[test]

@@ -10,6 +10,7 @@ use std::path::Path ;
 use std::collections::HashMap ;
 use std::io::{Write, Read} ;
 use std::io ;
+use std::str::FromStr ;
 
 use tokio_core::reactor::{Core,Timeout} ;
 use futures::Async ;
@@ -34,7 +35,7 @@ use byteorder ;
 const DEBUG_LOGGER:bool = true ;
 static START: Once = ONCE_INIT ;
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub enum Domain {
   App,
   View,
@@ -47,7 +48,7 @@ pub enum Domain {
   Cache,
   DB,
   IO,
-  Custom(&'static str)
+  Custom(String)
 }
 
 impl fmt::Display for Domain {
@@ -55,6 +56,27 @@ impl fmt::Display for Domain {
         match *self {
             Domain::Custom(ref custom_name) => write!(f, "{}", custom_name),
             _ => write!(f, "{:?}", self)
+        }
+    }
+}
+
+impl FromStr for Domain {
+    type Err = () ;
+
+    fn from_str(s: &str) -> Result<Domain, ()> {
+        match s {
+            "App" => return Ok(Domain::App),
+            "View" => return Ok(Domain::View),
+            "Layout" => return Ok(Domain::Layout),
+            "Controller" => return Ok(Domain::Controller),
+            "Routing" => return Ok(Domain::Routing),
+            "Service" => return Ok(Domain::Service),
+            "Network" => return Ok(Domain::Network),
+            "Model" => return Ok(Domain::Model),
+            "Cache" => return Ok(Domain::Cache),
+            "DB" => return Ok(Domain::DB),
+            "IO" => return Ok(Domain::IO),
+            _ => return Ok(Domain::Custom(s.to_string()))
         }
     }
 }
