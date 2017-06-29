@@ -1,7 +1,6 @@
 #![feature(rustc_private)]
 #![feature(integer_atomics)]
 #![feature(ip)]
-#![feature(lookup_host)]
 #![feature(thread_id)]
 
 extern crate mio ;
@@ -22,8 +21,6 @@ extern crate byteorder ;
 
 extern crate chrono ;
 
-#[macro_use]
-extern crate enum_primitive ;
 
 pub mod nslogger ;
 
@@ -44,18 +41,6 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 #[cfg(test)]
 mod tests {
     use nslogger::{ Logger, Domain, Level } ;
-    use async_dnssd::{Interface, BrowseResult} ;
-    use tokio_core::reactor::{Core,Timeout} ;
-    use futures::Async ;
-    use futures::Stream ;
-    use async_dnssd ;
-    use std::net ;
-    use std::net::ToSocketAddrs ;
-    use std::time::Duration ;
-    use futures::Future ;
-    use futures::future::Either ;
-    use futures::IntoFuture ;
-    use std::thread ;
 
     #[test]
     fn connects_via_bonjour_with_ssl() {
@@ -66,7 +51,7 @@ mod tests {
 
     #[test]
     fn creates_logger_instance() {
-        let mut log = Logger::new() ;
+        let log = Logger::new() ;
         log.log_b(Some(Domain::App), Level::Warning, "test") ;
         log.log_b(Some(Domain::DB), Level::Error, "test1") ;
         log.log_b(Some(Domain::DB), Level::Debug, "test2") ;

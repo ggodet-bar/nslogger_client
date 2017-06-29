@@ -1,23 +1,20 @@
-use mio::{Events, Event, Poll} ;
-use std::thread::{spawn, JoinHandle, Thread} ;
+use std::thread::{spawn, Thread} ;
 use std::thread ;
 use std::sync::mpsc ;
 use std::sync::{Arc, Mutex} ;
 use std::vec::Vec ;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering} ;
+use std::sync::atomic::{AtomicU32, Ordering} ;
 use std::time::Duration ;
 use std::path::Path ;
 use std::collections::HashMap ;
-use std::io::{Write, Read} ;
+use std::io::Write ;
 use std::io ;
 use std::str::FromStr ;
 
 use tokio_core::reactor::{Core,Timeout} ;
-use futures::Async ;
 use futures::Stream ;
 use async_dnssd ;
-use async_dnssd::{Interface, BrowseResult} ;
-use std::net ;
+use async_dnssd::Interface ;
 use std::net::ToSocketAddrs ;
 use std::net::TcpStream ;
 use openssl::ssl::{SslMethod, SslConnectorBuilder, SslStream} ;
@@ -82,7 +79,6 @@ impl FromStr for Domain {
     }
 }
 
-enum_from_primitive! {
 #[derive(Copy,Clone)]
 pub enum Level {
     Error = 0,
@@ -93,6 +89,17 @@ pub enum Level {
     Verbose,
     Noise
 }
+
+impl Level {
+    pub fn from_log_level(level:log::LogLevel) -> Level {
+        match level {
+            log::LogLevel::Error => Level::Error,
+            log::LogLevel::Warn  => Level::Warning,
+            log::LogLevel::Info  => Level::Info,
+            log::LogLevel::Debug => Level::Debug,
+            log::LogLevel::Trace => Level::Verbose,
+        }
+    }
 }
 
 bitflags! {
@@ -376,7 +383,6 @@ impl LoggerState
                             info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]) ;
                         }
                     }
-                    let mut remaining = length ;
 
                     {
                         let mut tcp_stream = self.remote_socket.as_mut().unwrap() ;
@@ -404,7 +410,7 @@ impl LoggerState
             info!(target:"NSLogger", "pushing client info to front of queue") ;
         }
 
-        let mut message = LogMessage::new(LogMessageType::CLIENT_INFO, self.get_and_increment_sequence_number()) ;
+        let message = LogMessage::new(LogMessageType::CLIENT_INFO, self.get_and_increment_sequence_number()) ;
         self.log_messages.insert(0, message) ;
         self.is_client_info_added = true ;
     }
@@ -452,7 +458,7 @@ impl LoggerState
 
             let connector = ssl_connector_builder.build() ;
             if let SocketWrapper::Tcp(inner_stream) = self.remote_socket.take().unwrap() {
-                let mut stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(inner_stream).unwrap();
+                let stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(inner_stream).unwrap();
                 self.remote_socket = Some(SocketWrapper::Ssl(stream)) ;
             }
 
@@ -694,7 +700,7 @@ impl MessageWorker {
             match core.run(listener.into_future().select2(timeout)) {
                 Ok( either ) => {
                     match either {
-                       Either::A(( ( result, browse ), _ )) => {
+                       Either::A(( ( result, _ ), _ )) => {
                            let browse_result = result.unwrap() ;
                            if DEBUG_LOGGER {
                                 info!(target:"NSLogger", "Browse result: {:?}", browse_result) ;
@@ -1062,12 +1068,11 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record:&log::LogRecord) {
-        use enum_primitive::FromPrimitive ;
         if !self.enabled(record.metadata()) {
             return ;
         }
 
-        self.log_a(Some(Path::new(record.location().file())), None, None, Some(Domain::from_str(record.target()).unwrap()), Level::from_u8(record.level() as u8 - 1).unwrap(), &format!("{}", record.args())) ;
+        self.log_a(Some(Path::new(record.location().file())), None, None, Some(Domain::from_str(record.target()).unwrap()), Level::from_log_level(record.level()), &format!("{}", record.args())) ;
     }
 }
 
