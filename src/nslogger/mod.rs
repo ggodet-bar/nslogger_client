@@ -28,6 +28,7 @@ use std::time ;
 use std::fmt ;
 use env_logger ;
 use std::sync::{Once, ONCE_INIT};
+use log ;
 
 use byteorder::{ByteOrder, NetworkEndian, WriteBytesExt} ;
 use byteorder ;
@@ -81,9 +82,10 @@ impl FromStr for Domain {
     }
 }
 
+enum_from_primitive! {
 #[derive(Copy,Clone)]
 pub enum Level {
-    Error,
+    Error = 0,
     Warning,
     Important,
     Info,
@@ -91,7 +93,7 @@ pub enum Level {
     Verbose,
     Noise
 }
-
+}
 
 bitflags! {
     flags LoggerOptions: u16 {
@@ -329,14 +331,17 @@ struct LoggerState
 
     next_sequence_numbers:AtomicU32,
     pub log_messages:Vec<LogMessage>,
-    pub message_sender:mpsc::Sender<HandlerMessageType>
+    pub message_sender:mpsc::Sender<HandlerMessageType>,
+    pub message_receiver:Option<mpsc::Receiver<HandlerMessageType>>,
 }
 
 impl LoggerState
 {
     pub fn process_log_queue(&mut self) {
         if self.log_messages.is_empty() {
-            info!(target:"NSLogger", "process_log_queue empty") ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "process_log_queue empty") ;
+            }
             return ;
         }
 
@@ -357,13 +362,18 @@ impl LoggerState
             while !self.log_messages.is_empty() {
                 {
                     let message = self.log_messages.first().unwrap() ;
-                    info!(target:"NSLogger", "processing message {}", &message.sequence_number) ;
+                    if DEBUG_LOGGER {
+                        info!(target:"NSLogger", "processing message {}", &message.sequence_number) ;
+                    }
 
                     let message_vec = message.get_bytes() ;
                     let message_bytes = message_vec.as_slice() ;
                     let length = message_bytes.len() ;
-                    info!(target:"NSLogger", "length: {}", length) ;
-                    info!(target:"NSLogger", "bytes: {:?}", message_bytes) ;
+                    if DEBUG_LOGGER {
+                        use std::cmp ;
+                        info!(target:"NSLogger", "length: {}", length) ;
+                        info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]) ;
+                    }
                     let mut remaining = length ;
 
                     {
@@ -718,23 +728,23 @@ pub struct Logger {
     worker_thread_channel_rx: Option<mpsc::Receiver<bool>>,
     shared_state: Arc<Mutex<LoggerState>>,
     message_sender:mpsc::Sender<HandlerMessageType>,
-    message_receiver:Option<mpsc::Receiver<HandlerMessageType>>,
 }
 
 impl Logger {
 
     pub fn new() -> Logger {
-        START.call_once(|| {
+        if DEBUG_LOGGER {
+            START.call_once(|| {
 
-            env_logger::init().unwrap() ;
-        }) ;
-        info!(target:"NSLogger", "NSLogger client started") ;
+                env_logger::init().unwrap() ;
+            }) ;
+            info!(target:"NSLogger", "NSLogger client started") ;
+        }
         let (message_sender, message_receiver) = mpsc::channel() ;
         let sender_clone = message_sender.clone() ;
 
         return Logger{ worker_thread_channel_rx: None,
                        message_sender: message_sender,
-                       message_receiver: Some(message_receiver),
                        shared_state: Arc::new(Mutex::new(LoggerState{ options: BROWSE_BONJOUR | USE_SSL,
                                                                       ready_waiters: vec![],
                                                                       bonjour_service_type: None,
@@ -750,7 +760,8 @@ impl Logger {
                                                                       is_client_info_added: false,
                                                                       next_sequence_numbers: AtomicU32::new(0),
                                                                       log_messages: vec![],
-                                                                      message_sender: sender_clone
+                                                                      message_sender: sender_clone,
+                                                                      message_receiver: Some(message_receiver),
                                                                     })),
                        } ;
     }
@@ -794,7 +805,7 @@ impl Logger {
     }
 
     // FIXME Eventually take some time to fix the method dispatch issue (using macros?)!
-    pub fn log_a(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level, message:&str) {
+    pub fn log_a(&self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level, message:&str) {
         info!(target:"NSLogger", "entering log_a") ;
         self.start_logging_thread_if_needed() ;
 
@@ -818,11 +829,11 @@ impl Logger {
         info!(target:"NSLogger", "Exiting log_a") ;
     }
 
-    pub fn log_b(&mut self, domain: Option<Domain>, level: Level, message:&str) {
+    pub fn log_b(&self, domain: Option<Domain>, level: Level, message:&str) {
         self.log_a(None, None, None, domain, level, message) ;
     }
 
-    pub fn log_c(&mut self, message:&str) {
+    pub fn log_c(&self, message:&str) {
         self.log_b(None, Level::Error, message) ;
     }
 
@@ -833,7 +844,7 @@ impl Logger {
     ///
 	/// * `message`	optional message
 	///
-    pub fn log_mark(&mut self, message:Option<&str>) {
+    pub fn log_mark(&self, message:Option<&str>) {
         use chrono ;
         info!(target:"NSLogger", "entering log_mark") ;
         self.start_logging_thread_if_needed() ;
@@ -866,7 +877,7 @@ impl Logger {
         info!(target:"NSLogger", "leaving log_mark") ;
     }
 
-    pub fn log_data(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>,
+    pub fn log_data(&self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>,
                      domain:Option<Domain>, level:Level, data:&[u8]) {
         info!(target:"NSLogger", "entering log_data") ;
         self.start_logging_thread_if_needed() ;
@@ -915,25 +926,28 @@ impl Logger {
         info!(target:"NSLogger", "leaving log_image") ;
     }
 
-    fn start_logging_thread_if_needed(&mut self) {
+    fn start_logging_thread_if_needed(&self) {
         let mut waiting = false ;
 
-        match self.message_receiver {
-            Some(_) => {
-                self.shared_state.lock().unwrap().ready_waiters.push(thread::current()) ;
-                let cloned_state = self.shared_state.clone() ;
+        {
+            let mut local_shared_state = self.shared_state.lock().unwrap() ;
+            match local_shared_state.message_receiver {
+                Some(_) => {
+                    local_shared_state.ready_waiters.push(thread::current()) ;
+                    let cloned_state = self.shared_state.clone() ;
 
-                let receiver = self.message_receiver.take().unwrap() ;
-                let sender = self.message_sender.clone() ;
-                spawn( move || {
-                    MessageWorker::new(cloned_state, sender, receiver).run() ;
-                }) ;
-                waiting = true ;
+                    let receiver = local_shared_state.message_receiver.take().unwrap() ;
+                    let sender = self.message_sender.clone() ;
+                    spawn( move || {
+                        MessageWorker::new(cloned_state, sender, receiver).run() ;
+                    }) ;
+                    waiting = true ;
 
-            },
-            _ => ()
+                },
+                _ => ()
 
-        } ;
+            } ;
+        }
 
 
         info!(target:"NSLogger", "Waiting for worker to be ready") ;
@@ -953,7 +967,7 @@ impl Logger {
         info!(target:"NSLogger", "Worker is ready and running") ;
     }
 
-    fn send_and_flush_if_required(&mut self, mut log_message:LogMessage) {
+    fn send_and_flush_if_required(& self, mut log_message:LogMessage) {
         let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
         let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
         if needs_flush {
@@ -979,3 +993,22 @@ impl Drop for Logger {
 
     }
 }
+
+impl log::Log for Logger {
+    fn enabled(&self, metadata:&log::LogMetadata) -> bool {
+        true
+    }
+
+    fn log(&self, record:&log::LogRecord) {
+        use enum_primitive::FromPrimitive ;
+        if !self.enabled(record.metadata()) {
+            return ;
+        }
+
+        self.log_a(Some(Path::new(record.location().file())), None, None, Some(Domain::from_str(record.target()).unwrap()), Level::from_u8(record.level() as u8 - 1).unwrap(), &format!("{}", record.args())) ;
+    }
+}
+
+unsafe impl Sync for Logger {}
+
+unsafe impl Send for Logger {}

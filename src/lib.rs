@@ -22,6 +22,9 @@ extern crate byteorder ;
 
 extern crate chrono ;
 
+#[macro_use]
+extern crate enum_primitive ;
+
 pub mod nslogger ;
 
 #[cfg(test)]
