@@ -4,7 +4,9 @@ version = "0.1.0"
 authors = ["Guillaume Godet-Bar <guillaume.godetbar@gmail.com>"]
 
 [lib]
-crate-type = ["staticlib"]
+name="nslogger"
+crate-type = ["lib"]
+path = "src/lib.rs"
 
 [dependencies]
 async-dnssd = "0.2.0"

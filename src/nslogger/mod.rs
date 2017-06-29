@@ -33,7 +33,7 @@ use log ;
 use byteorder::{ByteOrder, NetworkEndian, WriteBytesExt} ;
 use byteorder ;
 
-const DEBUG_LOGGER:bool = true ;
+const DEBUG_LOGGER:bool = false ;
 static START: Once = ONCE_INIT ;
 
 #[derive(Debug,PartialEq)]
@@ -371,8 +371,10 @@ impl LoggerState
                     let length = message_bytes.len() ;
                     if DEBUG_LOGGER {
                         use std::cmp ;
-                        info!(target:"NSLogger", "length: {}", length) ;
-                        info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]) ;
+                        if DEBUG_LOGGER {
+                            info!(target:"NSLogger", "length: {}", length) ;
+                            info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]) ;
+                        }
                     }
                     let mut remaining = length ;
 
@@ -392,7 +394,9 @@ impl LoggerState
             }
         }
 
-        info!(target:"NSLogger", "[{:?}] finished processing log queue", thread::current().id()) ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "[{:?}] finished processing log queue", thread::current().id()) ;
+        }
     }
 
     fn push_client_info_to_front_of_queue(&mut self) {
@@ -432,7 +436,9 @@ impl LoggerState
             Err(e) => return Err("error occurred during tcp stream connection")
         } ;
 
-        info!(target:"NSLogger", "{:?}", &stream) ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "{:?}", &stream) ;
+        }
         self.remote_socket = Some(SocketWrapper::Tcp(stream)) ;
         if !(self.options | USE_SSL).is_empty() {
             if DEBUG_LOGGER {
@@ -503,7 +509,9 @@ impl MessageHandler {
     pub fn run_loop(&self) {
         self.shared_state.lock().unwrap().is_handler_running = true  ;
         loop {
-            info!(target:"NSLogger", "[{:?}] Handler waiting for message", thread::current().id()) ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "[{:?}] Handler waiting for message", thread::current().id()) ;
+            }
             match self.channel_receiver.recv() {
                 Ok(message) => {
                     if DEBUG_LOGGER {
@@ -580,13 +588,17 @@ impl MessageHandler {
                     }
                 },
                 Err(e) =>{
-                    warn!(target:"NSLogger", "Error received: {:?}", e) ;
+                    if DEBUG_LOGGER {
+                        warn!(target:"NSLogger", "Error received: {:?}", e) ;
+                    }
                     break ;
                 }
             }
         } ;
 
-        info!(target:"NSLogger", "leaving message handler loop") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "leaving message handler loop") ;
+        }
     }
 }
 
@@ -662,7 +674,9 @@ impl MessageWorker {
             self.close_bonjour() ;
         }
         else {
-            info!(target:"NSLogger", "Setting up Bonjour") ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "Setting up Bonjour") ;
+            }
 
             let service_type = if (self.shared_state.lock().unwrap().options & USE_SSL).is_empty() {
                 "_nslogger._tcp"
@@ -682,13 +696,17 @@ impl MessageWorker {
                     match either {
                        Either::A(( ( result, browse ), _ )) => {
                            let browse_result = result.unwrap() ;
-                            info!(target:"NSLogger", "Browse result: {:?}", browse_result) ;
-                            info!(target:"NSLogger", "Service name: {}", browse_result.service_name) ;
+                           if DEBUG_LOGGER {
+                                info!(target:"NSLogger", "Browse result: {:?}", browse_result) ;
+                                info!(target:"NSLogger", "Service name: {}", browse_result.service_name) ;
+                           }
                             self.shared_state.lock().unwrap().bonjour_service_name = Some(browse_result.service_name.to_string()) ;
                             match core.run(browse_result.resolve(&handle).unwrap().into_future()) {
                                 Ok( (resolve_result, resolve) ) => {
                                     let resolve_details = resolve_result.unwrap() ;
-                                    info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
+                                    if DEBUG_LOGGER {
+                                        info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
+                                    }
                                     let mut port_buf = [0;4] ;
                                     byteorder::NetworkEndian::write_u16(&mut port_buf, resolve_details.port) ;
                                     let actual_port = byteorder::NativeEndian::read_u16(&port_buf) ;
@@ -697,7 +715,9 @@ impl MessageWorker {
 
                                         if !host_addr.ip().is_global() && host_addr.ip().is_ipv4() {
                                             let ip_address = format!("{}", host_addr.ip()) ;
-                                            info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
+                                            if DEBUG_LOGGER {
+                                                info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
+                                            }
                                             self.shared_state.lock().unwrap().remote_host = Some(ip_address) ;
                                             self.shared_state.lock().unwrap().remote_port = Some(actual_port) ;
                                             break ;
@@ -707,13 +727,23 @@ impl MessageWorker {
 
                                     self.message_sender.send(HandlerMessageType::TRY_CONNECT) ;
                                 },
-                                Err(b) => warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
+                                Err(b) => {
+                                    if DEBUG_LOGGER {
+                                        warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
+                                    }
+                                }
                             } ;
                         },
-                        Either::B( ( timeout, browse ) ) => warn!(target:"NSLogger", "Bonjour discovery timed out")
+                        Either::B( ( timeout, browse ) ) => {
+                            if DEBUG_LOGGER {
+                                warn!(target:"NSLogger", "Bonjour discovery timed out")
+                            }
+                        }
                     }
                 },
-                Err(b) => warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
+                Err(b) => if DEBUG_LOGGER {
+                    warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
+                }
 
             } ;
         }
@@ -766,6 +796,7 @@ impl Logger {
                        } ;
     }
 
+
     pub fn set_remote_host(&mut self, host_name:&str, host_port:u16, use_ssl:bool) {
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "set_remote_host host={} port={} use_ssl={}", host_name, host_port, use_ssl) ;
@@ -806,11 +837,15 @@ impl Logger {
 
     // FIXME Eventually take some time to fix the method dispatch issue (using macros?)!
     pub fn log_a(&self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level, message:&str) {
-        info!(target:"NSLogger", "entering log_a") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "entering log_a") ;
+        }
         self.start_logging_thread_if_needed() ;
 
         if !self.shared_state.lock().unwrap().is_handler_running {
-            info!(target:"NSLogger", "Early return") ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "Early return") ;
+            }
             return ;
         }
 
@@ -826,7 +861,9 @@ impl Logger {
         log_message.add_string(MessagePartKey::MESSAGE, message) ;
 
         self.send_and_flush_if_required(log_message) ;
-        info!(target:"NSLogger", "Exiting log_a") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "Exiting log_a") ;
+        }
     }
 
     pub fn log_b(&self, domain: Option<Domain>, level: Level, message:&str) {
@@ -846,10 +883,14 @@ impl Logger {
 	///
     pub fn log_mark(&self, message:Option<&str>) {
         use chrono ;
-        info!(target:"NSLogger", "entering log_mark") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "entering log_mark") ;
+        }
         self.start_logging_thread_if_needed() ;
         if !self.shared_state.lock().unwrap().is_handler_running {
-            info!(target:"NSLogger", "Early return") ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "Early return") ;
+            }
             return ;
         }
 
@@ -874,15 +915,22 @@ impl Logger {
 
         self.send_and_flush_if_required(log_message) ;
 
-        info!(target:"NSLogger", "leaving log_mark") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "leaving log_mark") ;
+        }
     }
 
     pub fn log_data(&self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>,
                      domain:Option<Domain>, level:Level, data:&[u8]) {
-        info!(target:"NSLogger", "entering log_data") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "entering log_data") ;
+        }
+
         self.start_logging_thread_if_needed() ;
         if !self.shared_state.lock().unwrap().is_handler_running {
-            info!(target:"NSLogger", "Early return") ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "Early return") ;
+            }
             return ;
         }
 
@@ -898,16 +946,22 @@ impl Logger {
 
         self.send_and_flush_if_required(log_message) ;
 
-        info!(target:"NSLogger", "leaving log_data") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "leaving log_data") ;
+        }
     }
 
     pub fn log_image(&mut self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>,
                      domain:Option<Domain>, level:Level, data:&[u8]) {
 
-        info!(target:"NSLogger", "entering log_image") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "entering log_image") ;
+        }
         self.start_logging_thread_if_needed() ;
         if !self.shared_state.lock().unwrap().is_handler_running {
-            info!(target:"NSLogger", "Early return") ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "Early return") ;
+            }
             return ;
         }
 
@@ -923,7 +977,9 @@ impl Logger {
 
         self.send_and_flush_if_required(log_message) ;
 
-        info!(target:"NSLogger", "leaving log_image") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "leaving log_image") ;
+        }
     }
 
     fn start_logging_thread_if_needed(&self) {
@@ -950,7 +1006,9 @@ impl Logger {
         }
 
 
-        info!(target:"NSLogger", "Waiting for worker to be ready") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "Waiting for worker to be ready") ;
+        }
 
         while !self.shared_state.lock().unwrap().ready {
             if !waiting {
@@ -964,7 +1022,9 @@ impl Logger {
 
         }
 
-        info!(target:"NSLogger", "Worker is ready and running") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "Worker is ready and running") ;
+        }
     }
 
     fn send_and_flush_if_required(& self, mut log_message:LogMessage) {
@@ -987,7 +1047,9 @@ impl Logger {
 
 impl Drop for Logger {
     fn drop(&mut self) {
-        info!(target:"NSLogger", "calling drop for logger instance") ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "calling drop for logger instance") ;
+        }
 
         self.message_sender.send(HandlerMessageType::QUIT) ;
 
@@ -1012,3 +1074,5 @@ impl log::Log for Logger {
 unsafe impl Sync for Logger {}
 
 unsafe impl Send for Logger {}
+
+

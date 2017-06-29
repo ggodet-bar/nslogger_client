@@ -27,6 +27,20 @@ extern crate enum_primitive ;
 
 pub mod nslogger ;
 
+use nslogger::Logger ;
+
+/// Initializes the global logger with a Logger instance.
+///
+/// This should be called early in the execution of a Rust program, and the
+/// global logger may only be initialized once. Future initialization
+/// attempts will return an error.
+pub fn init() -> Result<(), log::SetLoggerError> {
+    log::set_logger(|max_log_level| {
+        max_log_level.set(log::LogLevelFilter::Info) ;
+        Box::new(Logger::new())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use nslogger::{ Logger, Domain, Level } ;
