@@ -2,7 +2,6 @@ use std::thread::spawn ;
 use std::thread ;
 use std::sync::mpsc ;
 use std::sync::{Arc, Mutex} ;
-use std::sync::atomic::AtomicU32 ;
 use std::time::Duration ;
 use std::path::Path ;
 use std::collections::HashMap ;
@@ -20,13 +19,11 @@ mod message_handler ;
 mod logger_state ;
 mod message_worker ;
 
-use self::log_message::{LogMessage,LogMessageType,MessagePartKey} ;
-
 // Exports Level & Domain as part of the public interface
 pub use self::log_message::{Level,Domain} ;
 
+use self::log_message::{LogMessage,LogMessageType,MessagePartKey} ;
 use self::message_worker::MessageWorker ;
-
 use self::logger_state::{LoggerState,HandlerMessageType} ;
 
 
@@ -62,25 +59,8 @@ impl Logger {
 
         return Logger{ worker_thread_channel_rx: None,
                        message_sender: message_sender,
-                       shared_state: Arc::new(Mutex::new(LoggerState{ options: BROWSE_BONJOUR | USE_SSL,
-                                                                      ready_waiters: vec![],
-                                                                      bonjour_service_type: None,
-                                                                      bonjour_service_name: None,
-                                                                      remote_host: None,
-                                                                      remote_port: None,
-                                                                      remote_socket: None,
-                                                                      is_reconnection_scheduled: false,
-                                                                      is_connecting: false,
-                                                                      is_connected: false,
-                                                                      is_handler_running: false,
-                                                                      ready: false,
-                                                                      is_client_info_added: false,
-                                                                      next_sequence_numbers: AtomicU32::new(0),
-                                                                      log_messages: vec![],
-                                                                      message_sender: sender_clone,
-                                                                      message_receiver: Some(message_receiver),
-                                                                    })),
-                       } ;
+                       shared_state: Arc::new(Mutex::new(LoggerState::new(sender_clone, message_receiver))),
+                      } ;
     }
 
 

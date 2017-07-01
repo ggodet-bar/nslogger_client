@@ -14,7 +14,7 @@ use nslogger::log_message::{LogMessage, LogMessageType} ;
 
 use nslogger::DEBUG_LOGGER ;
 use nslogger::LoggerOptions ;
-use nslogger::USE_SSL ;
+use nslogger::{USE_SSL, BROWSE_BONJOUR} ;
 
 #[derive(Debug)]
 pub enum HandlerMessageType {
@@ -64,14 +64,35 @@ pub struct LoggerState
     /// file or socket output stream
     //pub write_stream:Option<Write + 'static:std::marker::Sized>,
 
-    pub next_sequence_numbers:AtomicU32,
+    next_sequence_numbers:AtomicU32,
     pub log_messages:Vec<LogMessage>,
-    pub message_sender:mpsc::Sender<HandlerMessageType>,
+    message_sender:mpsc::Sender<HandlerMessageType>,
     pub message_receiver:Option<mpsc::Receiver<HandlerMessageType>>,
 }
 
 impl LoggerState
 {
+    pub fn new(message_sender:mpsc::Sender<HandlerMessageType>, message_receiver:mpsc::Receiver<HandlerMessageType>) -> LoggerState {
+        LoggerState{  options: BROWSE_BONJOUR | USE_SSL,
+                      ready_waiters: vec![],
+                      bonjour_service_type: None,
+                      bonjour_service_name: None,
+                      remote_host: None,
+                      remote_port: None,
+                      remote_socket: None,
+                      is_reconnection_scheduled: false,
+                      is_connecting: false,
+                      is_connected: false,
+                      is_handler_running: false,
+                      ready: false,
+                      is_client_info_added: false,
+                      next_sequence_numbers: AtomicU32::new(0),
+                      log_messages: vec![],
+                      message_sender: message_sender,
+                      message_receiver: Some(message_receiver),
+        }
+    }
+
     pub fn process_log_queue(&mut self) {
         if self.log_messages.is_empty() {
             if DEBUG_LOGGER {
