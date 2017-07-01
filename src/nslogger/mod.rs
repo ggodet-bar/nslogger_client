@@ -710,13 +710,11 @@ impl MessageWorker {
                             match core.run(browse_result.resolve(&handle).unwrap().into_future()) {
                                 Ok( (resolve_result, resolve) ) => {
                                     let resolve_details = resolve_result.unwrap() ;
+                                    let port = u16::from_be(resolve_details.port) ;
                                     if DEBUG_LOGGER {
                                         info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
                                     }
-                                    let mut port_buf = [0;4] ;
-                                    byteorder::NetworkEndian::write_u16(&mut port_buf, resolve_details.port) ;
-                                    let actual_port = byteorder::NativeEndian::read_u16(&port_buf) ;
-                                    for host_addr in format!("{}:{}", resolve_details.host_target, actual_port).to_socket_addrs().unwrap() {
+                                    for host_addr in format!("{}:{}", resolve_details.host_target, port).to_socket_addrs().unwrap() {
 
 
                                         if !host_addr.ip().is_global() && host_addr.ip().is_ipv4() {
@@ -725,7 +723,7 @@ impl MessageWorker {
                                                 info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
                                             }
                                             self.shared_state.lock().unwrap().remote_host = Some(ip_address) ;
-                                            self.shared_state.lock().unwrap().remote_port = Some(actual_port) ;
+                                            self.shared_state.lock().unwrap().remote_port = Some(port) ;
                                             break ;
                                         }
 
