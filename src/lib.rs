@@ -84,7 +84,7 @@ mod tests {
         // TODO a better approach would probably be to write a small thread that crashes, with a
         // message that has to be passed before the crash?
         let mut log = Logger::new() ;
-        log.set_remote_host("192.168.0.8", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
+        log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
         log.set_message_flushing(true) ;
         log.log_b(Some(Domain::App), Level::Warning, "flush test") ;
         log.log_b(Some(Domain::DB), Level::Error, "flush test1") ;
@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn logs_mark(){
         let mut log = Logger::new() ;
-        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_remote_host("127.0.0.1", 50000, true) ;
         log.set_message_flushing(true) ;
         log.log_b(Some(Domain::App), Level::Warning, "before mark 1") ;
         log.log_b(Some(Domain::DB), Level::Error, "before mark 2") ;
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn logs_empty_mark(){
         let mut log = Logger::new() ;
-        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_remote_host("127.0.0.1", 50000, true) ;
         log.set_message_flushing(true) ;
         log.log_b(Some(Domain::App), Level::Warning, "before mark 1") ;
         log.log_b(Some(Domain::DB), Level::Error, "before mark 2") ;
@@ -128,7 +128,7 @@ mod tests {
         file_handle.read_to_end(&mut buffer).unwrap() ;
 
         let mut log = Logger::new() ;
-        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_remote_host("127.0.0.1", 50000, true) ;
         log.set_message_flushing(true) ;
         log.log_image(None, None, None, None, Level::Warning, &buffer) ;
     }
@@ -139,7 +139,7 @@ mod tests {
         // should read 'log test'
 
         let mut log = Logger::new() ;
-        log.set_remote_host("192.168.0.8", 50000, true) ;
+        log.set_remote_host("127.0.0.1", 50000, true) ;
         log.set_message_flushing(true) ;
         log.log_data(None, None, None, None, Level::Warning, &bytes) ;
     }
