@@ -1,12 +1,9 @@
 use std::sync::mpsc ;
 use std::sync::{Arc,Mutex} ;
-use std::collections::HashMap ;
 use std::thread ;
 
 use nslogger::logger_state::{ HandlerMessageType, LoggerState } ;
-use nslogger::log_message::LogMessage ;
 use nslogger::DEBUG_LOGGER ;
-use nslogger::LoggerOptions ;
 
 pub struct MessageHandler
 {

@@ -6,8 +6,7 @@ use std::path::Path ;
 use std::fmt ;
 use std::str::FromStr ;
 
-use byteorder ;
-use byteorder::{ByteOrder, NetworkEndian, WriteBytesExt} ;
+use byteorder::{NetworkEndian, WriteBytesExt} ;
 
 use log ;
 
