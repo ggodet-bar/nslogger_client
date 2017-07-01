@@ -28,13 +28,13 @@ use self::logger_state::{LoggerState,HandlerMessageType} ;
 
 
 bitflags! {
-    flags LoggerOptions: u16 {
-        const FLUSH_EACH_MESSAGE   = 0b00000001,
+    pub struct LoggerOptions: u16 {
+        const FLUSH_EACH_MESSAGE   = 0b00000001 ;
         // If set, NSLogger waits for each message to be sent to the desktop viewer (this includes connecting to the viewer)
 
-        const BROWSE_BONJOUR       = 0b00000010,
-        const USE_SSL              = 0b00000100,
-        const ROUTE_TO_LOGCAT      = 0b00001000
+        const BROWSE_BONJOUR       = 0b00000010 ;
+        const USE_SSL              = 0b00000100 ;
+        const ROUTE_TO_LOGCAT      = 0b00001000 ;
     }
 }
 

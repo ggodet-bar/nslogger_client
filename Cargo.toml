@@ -9,7 +9,7 @@ crate-type = ["lib"]
 path = "src/lib.rs"
 
 [dependencies]
-async-dnssd = "0.2.0"
+async-dnssd = "0.3.0"
 futures = "*"
 tokio-core = "*"
 mio  = "*"

@@ -116,11 +116,10 @@ impl MessageWorker {
                             match core.run(browse_result.resolve(&handle).unwrap().into_future()) {
                                 Ok( (resolve_result, resolve) ) => {
                                     let resolve_details = resolve_result.unwrap() ;
-                                    let port = u16::from_be(resolve_details.port) ;
                                     if DEBUG_LOGGER {
                                         info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
                                     }
-                                    for host_addr in format!("{}:{}", resolve_details.host_target, port).to_socket_addrs().unwrap() {
+                                    for host_addr in format!("{}:{}", resolve_details.host_target, resolve_details.port).to_socket_addrs().unwrap() {
 
 
                                         if !host_addr.ip().is_global() && host_addr.ip().is_ipv4() {
@@ -129,7 +128,7 @@ impl MessageWorker {
                                                 info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
                                             }
                                             self.shared_state.lock().unwrap().remote_host = Some(ip_address) ;
-                                            self.shared_state.lock().unwrap().remote_port = Some(port) ;
+                                            self.shared_state.lock().unwrap().remote_port = Some(resolve_details.port) ;
                                             break ;
                                         }
 
