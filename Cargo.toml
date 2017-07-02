@@ -18,6 +18,7 @@ openssl = "*"
 byteorder = "*"
 chrono = "*"
 log = "*"
+cfg-if = "0.1"
 
 [dev-dependencies]
 env_logger = "*"

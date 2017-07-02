@@ -9,6 +9,8 @@ extern crate bitflags ;
 
 #[macro_use]
 extern crate log ;
+
+#[cfg(test)]
 extern crate env_logger ;
 
 extern crate async_dnssd ;
@@ -20,6 +22,8 @@ extern crate byteorder ;
 
 extern crate chrono ;
 
+#[macro_use]
+extern crate cfg_if ;
 
 pub mod nslogger ;
 

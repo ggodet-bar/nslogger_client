@@ -7,11 +7,16 @@ use std::path::Path ;
 use std::collections::HashMap ;
 use std::str::FromStr ;
 
-use env_logger ;
-use std::sync::{Once, ONCE_INIT};
 use log ;
 
 const DEBUG_LOGGER:bool = false ;
+
+#[cfg(test)]
+use env_logger ;
+#[cfg(test)]
+use std::sync::{Once, ONCE_INIT} ;
+
+#[cfg(test)]
 static START: Once = ONCE_INIT ;
 
 mod log_message ;
@@ -47,12 +52,24 @@ pub struct Logger {
 impl Logger {
 
     pub fn new() -> Logger {
-        if DEBUG_LOGGER && cfg!(test) {
-            START.call_once(|| {
+        if DEBUG_LOGGER {
+            cfg_if! {
+                if #[cfg(test)] {
+                    fn init_test_logger() {
+                        println!("FOOOO") ;
+                        START.call_once(|| {
 
-                env_logger::init().unwrap() ;
-            }) ;
-            info!(target:"NSLogger", "NSLogger client started") ;
+                            env_logger::init().unwrap() ;
+                        }) ;
+                        info!(target:"NSLogger", "NSLogger client started") ;
+                    }
+                }
+                else {
+                    fn init_test_logger() {}
+                }
+            }
+
+            init_test_logger() ;
         }
         let (message_sender, message_receiver) = mpsc::channel() ;
         let sender_clone = message_sender.clone() ;
