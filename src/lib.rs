@@ -3,7 +3,6 @@
 #![feature(ip)]
 #![feature(thread_id)]
 
-extern crate mio ;
 
 #[macro_use]
 extern crate bitflags ;
@@ -24,7 +23,7 @@ extern crate chrono ;
 
 pub mod nslogger ;
 
-use nslogger::Logger ;
+pub use nslogger::Logger ;
 
 /// Initializes the global logger with a Logger instance.
 ///

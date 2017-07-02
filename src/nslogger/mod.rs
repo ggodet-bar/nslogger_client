@@ -47,7 +47,7 @@ pub struct Logger {
 impl Logger {
 
     pub fn new() -> Logger {
-        if DEBUG_LOGGER {
+        if DEBUG_LOGGER && cfg!(test) {
             START.call_once(|| {
 
                 env_logger::init().unwrap() ;

@@ -1,13 +1,14 @@
-#![feature(rustc_private)]
-
-
 #[macro_use]
 extern crate log ;
 extern crate nslogger ;
 
-//#[test]
+use std::sync::{Once, ONCE_INIT};
+
+static START: Once = ONCE_INIT ;
+
+#[test]
 fn logs_simple_messages() {
-    nslogger::init().unwrap() ;
+    initialize_logger() ;
 
     info!("This is an NSLogger info message") ;
     trace!("This is an NSLogger trace message") ;
@@ -17,9 +18,13 @@ fn logs_simple_messages() {
 
 #[test]
 fn logs_messages_with_targets() {
-    nslogger::init().unwrap() ;
+    initialize_logger() ;
 
     info!(target:"App", "Should find App domain") ;
     info!(target:"DB", "Should find DB domain") ;
     info!(target:"Custom", "Should create custom domain") ;
+}
+
+fn initialize_logger() {
+    START.call_once(|| { nslogger::init().unwrap() ; }) ;
 }
