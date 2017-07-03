@@ -37,9 +37,9 @@ impl MessageHandler {
 
                             let mut local_shared_state = self.shared_state.lock().unwrap() ;
                             local_shared_state.log_messages.push(message) ;
-                            if local_shared_state.is_connected {
+                            //if local_shared_state.is_connected {
                                 local_shared_state.process_log_queue() ;
-                            }
+                            //}
                         },
                         // NOTE Depends on the LogRecord concept that seems Java-specific
                         //HandlerMessageType::ADD_LOG_RECORD => {
@@ -76,13 +76,13 @@ impl MessageHandler {
                             if DEBUG_LOGGER {
                                 info!(target:"NSLogger",
                                       "try connect message received, remote socket is {:?}, connecting={:?}",
-                                      local_shared_state.remote_socket,
+                                      local_shared_state.write_stream,
                                       local_shared_state.is_connecting) ;
                             }
 
                             local_shared_state.is_reconnection_scheduled = false ;
 
-                            if local_shared_state.remote_socket.is_none() /* && local_shared_state.write_stream.is_none() */ {
+                            if local_shared_state.write_stream.is_none() /* && local_shared_state.write_stream.is_none() */ {
                                 if !local_shared_state.is_connecting
                                         && local_shared_state.remote_host.is_some()
                                         && local_shared_state.remote_port.is_some() {

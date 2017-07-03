@@ -41,14 +41,12 @@ impl MessageWorker {
         // the connection before releasing the waiting thread(s).
 
         // Initial setup according to current parameters
-        //if (bufferFile != null)
-            //createBufferWriteStream();
-        if { let shared_state = self.shared_state.lock().unwrap() ;
-             // We're creating a local scope since a double call of lock() will systematically
-             // cause a deadlock!
-
-             shared_state.remote_host.is_some()
-                && shared_state.remote_port.is_some() } {
+        if self.shared_state.lock().unwrap().log_file_path.is_some() {
+            self.create_buffer_write_stream() ;
+        }
+        else if { let shared_state = self.shared_state.lock().unwrap() ;
+                  shared_state.remote_host.is_some()
+                    && shared_state.remote_port.is_some() } {
             self.shared_state.lock().unwrap().connect_to_remote() ;
         }
         else if !(self.shared_state.lock().unwrap().options & BROWSE_BONJOUR).is_empty() {
@@ -76,9 +74,44 @@ impl MessageWorker {
         }
 
         // Once loop exists, reset the variable (in case of problem we'll recreate a thread)
-        //closeBonjour();
+        self.close_bonjour() ;
+        self.close_buffer_write_stream() ;
         //loggingThread = null;
         //loggingThreadHandler = null;
+    }
+
+    fn create_buffer_write_stream(&mut self) {
+        use std::fs::File ;
+        use std::io::BufWriter ;
+        use nslogger::logger_state::WriteStreamWrapper ;
+
+        if self.shared_state.lock().unwrap().log_file_path.is_none() {
+            return ;
+        }
+
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "Creating file buffer stream to {:?}", self.shared_state.lock().unwrap().log_file_path.as_ref().unwrap()) ;
+        }
+
+        let file_writer = BufWriter::new(File::create(self.shared_state.lock().unwrap().log_file_path.as_ref().unwrap()).unwrap()) ;
+        self.shared_state.lock().unwrap().write_stream = Some(WriteStreamWrapper::File(file_writer)) ;
+        self.shared_state.lock().unwrap().flush_queue_to_buffer_stream() ;
+    }
+
+
+    fn close_buffer_write_stream(&mut self) {
+        use std::io::Write ;
+
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "Closing file buffer stream") ;
+        }
+
+        let mut shared_state = self.shared_state.lock().unwrap() ;
+        let mut file_stream = shared_state.write_stream.take().unwrap() ;
+
+        file_stream.flush() ;
+
+        // Letting the file go out of scope will close it
     }
 
     fn setup_bonjour(&mut self) {
@@ -159,5 +192,6 @@ impl MessageWorker {
     }
 
     fn close_bonjour(&self) {
+        // FIXME FILL THAT
     }
 }

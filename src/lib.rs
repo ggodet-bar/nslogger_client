@@ -83,6 +83,14 @@ mod tests {
     }
 
     #[test]
+    fn logs_to_file() {
+        let mut log = Logger::new() ;
+        log.set_message_flushing(true) ;
+        log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
+        log.log_b(Some(Domain::App), Level::Warning, "message logged to file") ;
+    }
+
+    #[test]
     fn flushes_log_messages() {
         // TODO a better approach would probably be to write a small thread that crashes, with a
         // message that has to be passed before the crash?

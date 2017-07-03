@@ -6,10 +6,11 @@ use std::time::Duration ;
 use std::path::Path ;
 use std::collections::HashMap ;
 use std::str::FromStr ;
+use std::path::PathBuf ;
 
 use log ;
 
-const DEBUG_LOGGER:bool = false ;
+const DEBUG_LOGGER:bool = true ;
 
 #[cfg(test)]
 use env_logger ;
@@ -44,7 +45,6 @@ bitflags! {
 }
 
 pub struct Logger {
-    worker_thread_channel_rx: Option<mpsc::Receiver<bool>>,
     shared_state: Arc<Mutex<LoggerState>>,
     message_sender:mpsc::Sender<HandlerMessageType>,
 }
@@ -74,8 +74,7 @@ impl Logger {
         let (message_sender, message_receiver) = mpsc::channel() ;
         let sender_clone = message_sender.clone() ;
 
-        return Logger{ worker_thread_channel_rx: None,
-                       message_sender: message_sender,
+        return Logger{ message_sender: message_sender,
                        shared_state: Arc::new(Mutex::new(LoggerState::new(sender_clone, message_receiver))),
                       } ;
     }
@@ -86,28 +85,42 @@ impl Logger {
             info!(target:"NSLogger", "set_remote_host host={} port={} use_ssl={}", host_name, host_port, use_ssl) ;
         }
 
-        match self.worker_thread_channel_rx {
-            Some(_) => {
-                // Worker thread isn't yet setup
-                let mut properties = HashMap::new() ;
-                properties.insert("remote_host".to_string(), String::from(host_name)) ;
-                properties.insert("remote_port".to_string(), String::from(format!("{}", host_port))) ;
-                properties.insert("use_ssl".to_string(), String::from(if use_ssl { "1" } else { "0" })) ;
+        if self.shared_state.lock().unwrap().ready {
+            let mut properties = HashMap::new() ;
+            properties.insert("remote_host".to_string(), String::from(host_name)) ;
+            properties.insert("remote_port".to_string(), String::from(format!("{}", host_port))) ;
+            properties.insert("use_ssl".to_string(), String::from(if use_ssl { "1" } else { "0" })) ;
 
-                self.message_sender.send(HandlerMessageType::OPTION_CHANGE(properties)) ;
-            },
-            None => {
-                let mut local_shared_state = self.shared_state.lock().unwrap() ;
-                local_shared_state.remote_host = Some(String::from(host_name)) ;
-                local_shared_state.remote_port = Some(host_port) ;
+            self.message_sender.send(HandlerMessageType::OPTION_CHANGE(properties)) ;
+        }
+        else {
+            // Worker thread isn't yet setup
+            let mut local_shared_state = self.shared_state.lock().unwrap() ;
+            local_shared_state.remote_host = Some(String::from(host_name)) ;
+            local_shared_state.remote_port = Some(host_port) ;
 
-                if use_ssl {
-                    local_shared_state.options = local_shared_state.options | USE_SSL ;
-                } else {
-                    local_shared_state.options = local_shared_state.options - USE_SSL ;
-                }
+            if use_ssl {
+                local_shared_state.options = local_shared_state.options | USE_SSL ;
+            } else {
+                local_shared_state.options = local_shared_state.options - USE_SSL ;
             }
-        } ;
+        }
+    }
+
+    pub fn set_log_file_path(&mut self, file_path:&str) {
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "set_log_file_path path={:?}", file_path) ;
+        }
+
+        if self.shared_state.lock().unwrap().ready {
+            let mut properties = HashMap::new() ;
+            properties.insert("filename".to_string(), String::from(file_path)) ;
+
+            self.message_sender.send(HandlerMessageType::OPTION_CHANGE(properties)) ;
+        }
+        else {
+            self.shared_state.lock().unwrap().log_file_path = Some(PathBuf::from(file_path.to_string())) ;
+        }
     }
 
     pub fn set_message_flushing(&mut self, flush_each_message:bool) {

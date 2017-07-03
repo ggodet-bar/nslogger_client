@@ -6,6 +6,9 @@ use std::sync::mpsc ;
 use std::sync::atomic::{AtomicU32, Ordering} ;
 use std::net::TcpStream ;
 use std::collections::HashMap ;
+use std::fs::File ;
+use std::io::BufWriter ;
+use std::path::PathBuf ;
 
 use openssl ;
 use openssl::ssl::{SslMethod, SslConnectorBuilder, SslStream} ;
@@ -27,16 +30,26 @@ pub enum HandlerMessageType {
 }
 
 #[derive(Debug)]
-pub enum SocketWrapper {
+pub enum WriteStreamWrapper {
     Tcp(TcpStream),
     Ssl(SslStream<TcpStream>),
+    File(BufWriter<File>)
 }
 
-impl SocketWrapper {
+impl WriteStreamWrapper {
     pub fn write_all(&mut self, buf:&[u8]) -> io::Result<()> {
         match *self {
-            SocketWrapper::Tcp(ref mut stream) => return stream.write_all(buf),
-            SocketWrapper::Ssl(ref mut stream) => return stream.write_all(buf)
+            WriteStreamWrapper::Tcp(ref mut stream) => return stream.write_all(buf),
+            WriteStreamWrapper::Ssl(ref mut stream) => return stream.write_all(buf),
+            WriteStreamWrapper::File(ref mut stream) => return stream.write_all(buf),
+        }
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        match *self {
+            WriteStreamWrapper::Tcp(ref mut stream) =>  stream.flush(),
+            WriteStreamWrapper::Ssl(ref mut stream) =>  stream.flush(),
+            WriteStreamWrapper::File(ref mut stream) => stream.flush(),
         }
     }
 }
@@ -58,8 +71,7 @@ pub struct LoggerState
     pub remote_host:Option<String>,
     pub remote_port:Option<u16>,
 
-    /// the remote socket we're talking to
-    pub remote_socket:Option<SocketWrapper>,
+    pub write_stream:Option<WriteStreamWrapper>,
 
     /// file or socket output stream
     //pub write_stream:Option<Write + 'static:std::marker::Sized>,
@@ -68,6 +80,8 @@ pub struct LoggerState
     pub log_messages:Vec<LogMessage>,
     message_sender:mpsc::Sender<HandlerMessageType>,
     pub message_receiver:Option<mpsc::Receiver<HandlerMessageType>>,
+
+    pub log_file_path:Option<PathBuf>,
 }
 
 impl LoggerState
@@ -79,7 +93,7 @@ impl LoggerState
                       bonjour_service_name: None,
                       remote_host: None,
                       remote_port: None,
-                      remote_socket: None,
+                      write_stream: None,
                       is_reconnection_scheduled: false,
                       is_connecting: false,
                       is_connected: false,
@@ -90,6 +104,7 @@ impl LoggerState
                       log_messages: vec![],
                       message_sender: message_sender,
                       message_receiver: Some(message_receiver),
+                      log_file_path: None,
         }
     }
 
@@ -108,45 +123,13 @@ impl LoggerState
 
         // FIXME TONS OF STUFF SKIPPED!!
 
-        if self.is_connected {
+        if self.remote_host.is_none() {
+            self.flush_queue_to_buffer_stream() ;
+        }
+        else if self.is_connected {
             // FIXME SKIPPING SOME OTHER STUFF
 
-            if DEBUG_LOGGER {
-                info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len()) ;
-            }
-
-            while !self.log_messages.is_empty() {
-                {
-                    let message = self.log_messages.first().unwrap() ;
-                    if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "processing message {}", &message.sequence_number) ;
-                    }
-
-                    let message_vec = message.get_bytes() ;
-                    let message_bytes = message_vec.as_slice() ;
-                    let length = message_bytes.len() ;
-                    if DEBUG_LOGGER {
-                        use std::cmp ;
-                        if DEBUG_LOGGER {
-                            info!(target:"NSLogger", "length: {}", length) ;
-                            info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]) ;
-                        }
-                    }
-
-                    {
-                        let mut tcp_stream = self.remote_socket.as_mut().unwrap() ;
-                        tcp_stream.write_all(message_bytes).expect("Write to TCP stream failed") ;
-                    }
-
-                    match message.flush_rx {
-                        None => message.flush_tx.send(true).unwrap(),
-                        _ => ()
-                    }
-                }
-
-
-                self.log_messages.remove(0) ;
-            }
+            self.write_messages_to_stream() ;
         }
 
         if DEBUG_LOGGER {
@@ -174,7 +157,7 @@ impl LoggerState
         //if self.write_stream.is_some() {
             //return Err("internal error: write_stream should be none") ;
         //}
-        if self.remote_socket.is_some() {
+        if self.write_stream.is_some() {
             return Err("internal error: remote_socket should be none") ;
         }
 
@@ -194,7 +177,7 @@ impl LoggerState
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "{:?}", &stream) ;
         }
-        self.remote_socket = Some(SocketWrapper::Tcp(stream)) ;
+        self.write_stream = Some(WriteStreamWrapper::Tcp(stream)) ;
         if !(self.options | USE_SSL).is_empty() {
             if DEBUG_LOGGER {
                 info!(target:"NSLogger", "activating SSL connection") ;
@@ -206,9 +189,9 @@ impl LoggerState
             ssl_connector_builder.builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_NONE, |_,_| { true }) ;
 
             let connector = ssl_connector_builder.build() ;
-            if let SocketWrapper::Tcp(inner_stream) = self.remote_socket.take().unwrap() {
+            if let WriteStreamWrapper::Tcp(inner_stream) = self.write_stream.take().unwrap() {
                 let stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(inner_stream).unwrap();
-                self.remote_socket = Some(SocketWrapper::Ssl(stream)) ;
+                self.write_stream = Some(WriteStreamWrapper::Ssl(stream)) ;
             }
 
             self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
@@ -250,5 +233,54 @@ impl LoggerState
 
     pub fn get_and_increment_sequence_number(&mut self) -> u32 {
         return self.next_sequence_numbers.fetch_add(1, Ordering::SeqCst) ;
+    }
+
+
+    /// Write outstanding messages to the buffer file
+    pub fn flush_queue_to_buffer_stream(&mut self) {
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "flush_queue_to_buffer_stream") ;
+        }
+
+        self.write_messages_to_stream() ;
+    }
+
+    fn write_messages_to_stream(&mut self) {
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len()) ;
+        }
+
+        while !self.log_messages.is_empty() {
+            {
+                let message = self.log_messages.first().unwrap() ;
+                if DEBUG_LOGGER {
+                    info!(target:"NSLogger", "processing message {}", &message.sequence_number) ;
+                }
+
+                let message_vec = message.get_bytes() ;
+                let message_bytes = message_vec.as_slice() ;
+                let length = message_bytes.len() ;
+                if DEBUG_LOGGER {
+                    use std::cmp ;
+                    if DEBUG_LOGGER {
+                        info!(target:"NSLogger", "length: {}", length) ;
+                        info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]) ;
+                    }
+                }
+
+                {
+                    let mut tcp_stream = self.write_stream.as_mut().unwrap() ;
+                    tcp_stream.write_all(message_bytes).expect("Write to stream failed") ;
+                }
+
+                match message.flush_rx {
+                    None => message.flush_tx.send(true).unwrap(),
+                    _ => ()
+                }
+            }
+
+
+            self.log_messages.remove(0) ;
+        }
     }
 }
