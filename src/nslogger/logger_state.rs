@@ -38,18 +38,18 @@ pub enum WriteStreamWrapper {
 
 impl WriteStreamWrapper {
     pub fn write_all(&mut self, buf:&[u8]) -> io::Result<()> {
-        match *self {
-            WriteStreamWrapper::Tcp(ref mut stream) => return stream.write_all(buf),
-            WriteStreamWrapper::Ssl(ref mut stream) => return stream.write_all(buf),
-            WriteStreamWrapper::File(ref mut stream) => return stream.write_all(buf),
-        }
+        self.unwrap().write_all(buf)
     }
 
     pub fn flush(&mut self) -> io::Result<()> {
+        self.unwrap().flush()
+    }
+
+    fn unwrap(&mut self) -> &mut Write {
         match *self {
-            WriteStreamWrapper::Tcp(ref mut stream) =>  stream.flush(),
-            WriteStreamWrapper::Ssl(ref mut stream) =>  stream.flush(),
-            WriteStreamWrapper::File(ref mut stream) => stream.flush(),
+            WriteStreamWrapper::Tcp(ref mut stream) => stream,
+            WriteStreamWrapper::Ssl(ref mut stream) => stream,
+            WriteStreamWrapper::File(ref mut stream) => stream,
         }
     }
 }
