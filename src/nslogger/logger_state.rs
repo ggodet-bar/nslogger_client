@@ -155,8 +155,17 @@ impl LoggerState
 
         let mut message = LogMessage::new(LogMessageType::CLIENT_INFO, self.get_and_increment_sequence_number()) ;
 
-        message.add_string(MessagePartKey::OS_NAME, &sys_info::os_type().unwrap_or("Unknown OS".to_string())) ;
-        message.add_string(MessagePartKey::OS_VERSION, &sys_info::os_release().unwrap_or("Unknwon OS version".to_string())) ;
+        match sys_info::os_type() {
+            Ok(name) => {
+                message.add_string(MessagePartKey::OS_NAME, &name) ;
+
+                match sys_info::os_release() {
+                    Ok(release) => message.add_string(MessagePartKey::OS_VERSION, &release),
+                    _ => ()
+                } ;
+            },
+            _ => ()
+        } ;
 
         let process_name = env::current_exe().ok()
                                             .as_ref()
