@@ -95,6 +95,16 @@ pub enum MessagePartKey {
     FILENAME      = 11,   // when logging, message can contain a file name
     LINENUMBER    = 12,   // as well as a line number
     FUNCTIONNAME  = 13,   // and a function or method name
+
+    // Client info
+    CLIENT_NAME   = 20,
+    CLIENT_VERSION = 21,  // unreachable from Rust
+    OS_NAME       = 22,
+    OS_VERSION    = 23,
+    CLIENT_MODEL  = 24,   // Android-specific
+    UNIQUE_ID     = 25,   // Android-specific
+
+    USER_DEFINED  = 100,
 }
 
 #[derive(Copy,Clone)]

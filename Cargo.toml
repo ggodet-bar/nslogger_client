@@ -19,6 +19,7 @@ byteorder = "*"
 chrono = "*"
 log = "*"
 cfg-if = "0.1"
+sys-info = "*"
 
 [dev-dependencies]
 env_logger = "*"

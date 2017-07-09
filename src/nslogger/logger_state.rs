@@ -13,7 +13,7 @@ use std::path::PathBuf ;
 use openssl ;
 use openssl::ssl::{SslMethod, SslConnectorBuilder, SslStream} ;
 
-use nslogger::log_message::{LogMessage, LogMessageType} ;
+use nslogger::log_message::{LogMessage, LogMessageType, MessagePartKey} ;
 
 use nslogger::DEBUG_LOGGER ;
 use nslogger::LoggerOptions ;
@@ -121,10 +121,16 @@ impl LoggerState
             self.push_client_info_to_front_of_queue() ;
         }
 
+
         // FIXME TONS OF STUFF SKIPPED!!
 
         if self.remote_host.is_none() {
             self.flush_queue_to_buffer_stream() ;
+        }
+        else if self.write_stream.is_none() {
+            // the host is set by the socket isn't opened yet
+            self.disconnect_from_remote() ;
+            self.try_reconnecting() ;
         }
         else if self.is_connected {
             // FIXME SKIPPING SOME OTHER STUFF
@@ -138,11 +144,32 @@ impl LoggerState
     }
 
     fn push_client_info_to_front_of_queue(&mut self) {
+        use sys_info ;
+        use std::env ;
+        use std::ffi::OsStr ;
+        use std::path::Path ;
+
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "pushing client info to front of queue") ;
         }
 
-        let message = LogMessage::new(LogMessageType::CLIENT_INFO, self.get_and_increment_sequence_number()) ;
+        let mut message = LogMessage::new(LogMessageType::CLIENT_INFO, self.get_and_increment_sequence_number()) ;
+
+        message.add_string(MessagePartKey::OS_NAME, &sys_info::os_type().unwrap_or("Unknown OS".to_string())) ;
+        message.add_string(MessagePartKey::OS_VERSION, &sys_info::os_release().unwrap_or("Unknwon OS version".to_string())) ;
+
+        let process_name = env::current_exe().ok()
+                                            .as_ref()
+                                            .map(Path::new)
+                                            .and_then(Path::file_name)
+                                            .and_then(OsStr::to_str)
+                                            .map(String::from) ;
+
+        if process_name.is_some() {
+            message.add_string(MessagePartKey::CLIENT_NAME, &process_name.unwrap()) ;
+        }
+
+
         self.log_messages.insert(0, message) ;
         self.is_client_info_added = true ;
     }
@@ -229,6 +256,28 @@ impl LoggerState
             //loggingThreadHandler.sendMessage(loggingThreadHandler.obtainMessage(MSG_CONNECT_COMPLETE));
         //}
         Ok( () )
+    }
+
+    fn disconnect_from_remote(&mut self) {
+        self.is_connected = false ;
+
+        if self.write_stream.is_none() {
+            return ;
+        }
+
+
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "disconnect_from_remote()") ;
+        }
+
+        self.write_stream.take() ;
+
+        self.is_connecting = false ;
+        self.is_client_info_added = false ;
+    }
+
+    fn try_reconnecting(&mut self) {
+        // TODO
     }
 
     pub fn get_and_increment_sequence_number(&mut self) -> u32 {

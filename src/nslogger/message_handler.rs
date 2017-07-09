@@ -26,7 +26,7 @@ impl MessageHandler {
             match self.channel_receiver.recv() {
                 Ok(message) => {
                     if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "[{:?}] Received message: {:?}", thread::current().id(), &message) ;
+                        info!(target:"NSLogger", "[{:?}] Received message", thread::current().id()) ;
                     }
 
                     match message {

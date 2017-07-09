@@ -25,6 +25,8 @@ extern crate chrono ;
 #[macro_use]
 extern crate cfg_if ;
 
+extern crate sys_info ;
+
 pub mod nslogger ;
 
 pub use nslogger::Logger ;
@@ -88,6 +90,7 @@ mod tests {
         log.set_message_flushing(true) ;
         log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
         log.log_b(Some(Domain::App), Level::Warning, "message logged to file") ;
+        log.log_b(Some(Domain::DB), Level::Warning, "other message logged to file") ;
     }
 
     #[test]
