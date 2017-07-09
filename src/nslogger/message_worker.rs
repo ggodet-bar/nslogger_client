@@ -1,13 +1,6 @@
 use std::sync::mpsc ;
 use std::sync::{Arc,Mutex} ;
-use std::net::ToSocketAddrs ;
-use std::time::Duration ;
 
-use tokio_core::reactor::{Core,Timeout} ;
-use futures::future::Either ;
-use futures::{Stream,Future} ;
-use async_dnssd ;
-use async_dnssd::Interface ;
 
 use nslogger::logger_state::{ HandlerMessageType, LoggerState } ;
 use nslogger::message_handler::MessageHandler ;
@@ -42,7 +35,7 @@ impl MessageWorker {
 
         // Initial setup according to current parameters
         if self.shared_state.lock().unwrap().log_file_path.is_some() {
-            self.create_buffer_write_stream() ;
+            self.shared_state.lock().unwrap().create_buffer_write_stream() ;
         }
         else if { let shared_state = self.shared_state.lock().unwrap() ;
                   shared_state.remote_host.is_some()
@@ -50,7 +43,7 @@ impl MessageWorker {
             self.shared_state.lock().unwrap().connect_to_remote() ;
         }
         else if !(self.shared_state.lock().unwrap().options & BROWSE_BONJOUR).is_empty() {
-            self.setup_bonjour() ;
+            self.shared_state.lock().unwrap().setup_bonjour() ;
         }
 
 
@@ -74,124 +67,9 @@ impl MessageWorker {
         }
 
         // Once loop exists, reset the variable (in case of problem we'll recreate a thread)
-        self.close_bonjour() ;
-        self.close_buffer_write_stream() ;
+        self.shared_state.lock().unwrap().close_bonjour() ;
+        self.shared_state.lock().unwrap().close_buffer_write_stream() ;
         //loggingThread = null;
         //loggingThreadHandler = null;
-    }
-
-    fn create_buffer_write_stream(&mut self) {
-        use std::fs::File ;
-        use std::io::BufWriter ;
-        use nslogger::logger_state::WriteStreamWrapper ;
-
-        if self.shared_state.lock().unwrap().log_file_path.is_none() {
-            return ;
-        }
-
-        if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Creating file buffer stream to {:?}", self.shared_state.lock().unwrap().log_file_path.as_ref().unwrap()) ;
-        }
-
-        let file_writer = BufWriter::new(File::create(self.shared_state.lock().unwrap().log_file_path.as_ref().unwrap()).unwrap()) ;
-        self.shared_state.lock().unwrap().write_stream = Some(WriteStreamWrapper::File(file_writer)) ;
-        self.shared_state.lock().unwrap().flush_queue_to_buffer_stream() ;
-    }
-
-
-    fn close_buffer_write_stream(&mut self) {
-        use std::io::Write ;
-
-        if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Closing file buffer stream") ;
-        }
-
-        let mut shared_state = self.shared_state.lock().unwrap() ;
-        let mut file_stream = shared_state.write_stream.take().unwrap() ;
-
-        file_stream.flush() ;
-
-        // Letting the file go out of scope will close it
-    }
-
-    fn setup_bonjour(&mut self) {
-        if (self.shared_state.lock().unwrap().options & BROWSE_BONJOUR).is_empty() {
-            self.close_bonjour() ;
-        }
-        else {
-            if DEBUG_LOGGER {
-                info!(target:"NSLogger", "Setting up Bonjour") ;
-            }
-
-            let service_type = if (self.shared_state.lock().unwrap().options & USE_SSL).is_empty() {
-                "_nslogger._tcp"
-            } else {
-                "_nslogger-ssl._tcp"
-            } ;
-
-            self.shared_state.lock().unwrap().bonjour_service_type = Some(service_type.to_string()) ;
-            let mut core = Core::new().unwrap() ;
-            let handle = core.handle() ;
-
-            let mut listener = async_dnssd::browse(Interface::Any, service_type, None, &handle).unwrap() ;
-
-            let timeout = Timeout::new(Duration::from_secs(5), &handle).unwrap() ;
-            match core.run(listener.into_future().select2(timeout)) {
-                Ok( either ) => {
-                    match either {
-                       Either::A(( ( result, _ ), _ )) => {
-                           let browse_result = result.unwrap() ;
-                           if DEBUG_LOGGER {
-                                info!(target:"NSLogger", "Browse result: {:?}", browse_result) ;
-                                info!(target:"NSLogger", "Service name: {}", browse_result.service_name) ;
-                           }
-                            self.shared_state.lock().unwrap().bonjour_service_name = Some(browse_result.service_name.to_string()) ;
-                            match core.run(browse_result.resolve(&handle).unwrap().into_future()) {
-                                Ok( (resolve_result, resolve) ) => {
-                                    let resolve_details = resolve_result.unwrap() ;
-                                    if DEBUG_LOGGER {
-                                        info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
-                                    }
-                                    for host_addr in format!("{}:{}", resolve_details.host_target, resolve_details.port).to_socket_addrs().unwrap() {
-
-
-                                        if !host_addr.ip().is_global() && host_addr.ip().is_ipv4() {
-                                            let ip_address = format!("{}", host_addr.ip()) ;
-                                            if DEBUG_LOGGER {
-                                                info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
-                                            }
-                                            self.shared_state.lock().unwrap().remote_host = Some(ip_address) ;
-                                            self.shared_state.lock().unwrap().remote_port = Some(resolve_details.port) ;
-                                            break ;
-                                        }
-
-                                    }
-
-                                    self.message_sender.send(HandlerMessageType::TRY_CONNECT) ;
-                                },
-                                Err(b) => {
-                                    if DEBUG_LOGGER {
-                                        warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
-                                    }
-                                }
-                            } ;
-                        },
-                        Either::B( ( timeout, browse ) ) => {
-                            if DEBUG_LOGGER {
-                                warn!(target:"NSLogger", "Bonjour discovery timed out")
-                            }
-                        }
-                    }
-                },
-                Err(b) => if DEBUG_LOGGER {
-                    warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
-                }
-
-            } ;
-        }
-    }
-
-    fn close_bonjour(&self) {
-        // FIXME FILL THAT
     }
 }

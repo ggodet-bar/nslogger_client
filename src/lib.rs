@@ -86,11 +86,32 @@ mod tests {
 
     #[test]
     fn logs_to_file() {
+        use std::path::Path ;
+        use std::fs ;
+
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
         log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
         log.log_b(Some(Domain::App), Level::Warning, "message logged to file") ;
         log.log_b(Some(Domain::DB), Level::Warning, "other message logged to file") ;
+
+        let file_path = Path::new("/tmp/ns_logger.rawnsloggerdata") ;
+        assert!(file_path.exists()) ;
+
+
+        fs::remove_file(file_path) ;
+        assert!(!file_path.exists()) ;
+    }
+
+    #[test]
+    fn switches_from_file_to_network() {
+        let mut log = Logger::new() ;
+        log.set_message_flushing(true) ;
+        log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
+        log.log_b(Some(Domain::App), Level::Warning, "message logged to file") ;
+
+        log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
+        log.log_b(Some(Domain::App), Level::Warning, "message previously logged to file") ;
     }
 
     #[test]
@@ -157,4 +178,5 @@ mod tests {
         log.set_message_flushing(true) ;
         log.log_data(None, None, None, None, Level::Warning, &bytes) ;
     }
+
 }
