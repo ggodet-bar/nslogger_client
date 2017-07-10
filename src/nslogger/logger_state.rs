@@ -132,7 +132,9 @@ impl LoggerState
             self.disconnect_from_remote() ;
             self.try_reconnecting() ;
         }
-        else if self.is_connected {
+        else if self.is_connected || self.log_file_path.is_some() {
+            // second part of the condition absent from Java code. Allows actually dumping log data
+            // when switching from network mode to file mode.
             // FIXME SKIPPING SOME OTHER STUFF
 
             self.write_messages_to_stream() ;
@@ -211,10 +213,9 @@ impl LoggerState
                     None => ()
                 } ;
 
-                match new_options.get("bonjour_server") {
-                    Some(_) => new_flags |= BROWSE_BONJOUR,
-                    None => {
-                        host = new_options.get("remote_host").cloned() ;
+                match new_options.get("remote_host") {
+                    Some(host_value) => {
+                        host = Some(host_value.clone()) ;
                         port = new_options.get("remote_port")
                                           .and_then(| port_string | {
                                             u16::from_str_radix(port_string, 10).ok()
@@ -228,7 +229,8 @@ impl LoggerState
 
 
                         }
-                    }
+                    },
+                    None => new_flags |= BROWSE_BONJOUR
                 } ;
 
                 if new_flags != self.options || change {
@@ -358,7 +360,7 @@ impl LoggerState
             return Err("internal error: remote_socket should be none") ;
         }
 
-        //close_bonjour() ;
+        self.close_bonjour() ;
 
         let remote_host = self.remote_host.as_ref().unwrap() ;
         if DEBUG_LOGGER {
@@ -375,7 +377,7 @@ impl LoggerState
             info!(target:"NSLogger", "{:?}", &stream) ;
         }
         self.write_stream = Some(WriteStreamWrapper::Tcp(stream)) ;
-        if !(self.options | USE_SSL).is_empty() {
+        if !(self.options & USE_SSL).is_empty() {
             if DEBUG_LOGGER {
                 info!(target:"NSLogger", "activating SSL connection") ;
             }
@@ -389,6 +391,9 @@ impl LoggerState
             if let WriteStreamWrapper::Tcp(inner_stream) = self.write_stream.take().unwrap() {
                 let stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(inner_stream).unwrap();
                 self.write_stream = Some(WriteStreamWrapper::Ssl(stream)) ;
+                if DEBUG_LOGGER {
+                    info!(target:"NSLogger", "opened SSL stream") ;
+                }
             }
 
             self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
@@ -472,15 +477,17 @@ impl LoggerState
     pub fn close_buffer_write_stream(&mut self) {
         use std::io::Write ;
 
-        if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Closing file buffer stream") ;
+        if DEBUG_LOGGER && self.write_stream.is_some() {
+            info!(target:"NSLogger", "Closing buffer stream") ;
         }
 
         let mut file_stream = self.write_stream.take().unwrap() ;
 
         file_stream.flush() ;
-
         // Letting the file go out of scope will close it
+
+        self.is_client_info_added = false ;
+        // otherwise the viewer window won't ever open!
     }
 
     pub fn get_and_increment_sequence_number(&mut self) -> u32 {
@@ -515,6 +522,7 @@ impl LoggerState
                 if DEBUG_LOGGER {
                     use std::cmp ;
                     if DEBUG_LOGGER {
+                        info!(target:"NSLogger", "Writing to {:?}", self.write_stream.as_ref().unwrap()) ;
                         info!(target:"NSLogger", "length: {}", length) ;
                         info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]) ;
                     }

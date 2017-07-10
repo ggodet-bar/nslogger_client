@@ -104,14 +104,27 @@ mod tests {
     }
 
     #[test]
-    fn switches_from_file_to_network() {
+    fn switches_from_file_to_bonjour() {
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
         log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
         log.log_b(Some(Domain::App), Level::Warning, "message logged to file") ;
 
-        log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
+        log.set_bonjour_service(None, None, false) ;
+        //log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
+        log.set_message_flushing(true) ;
+        // FIXME Won't work: the change_option method will probably still be running
         log.log_b(Some(Domain::App), Level::Warning, "message previously logged to file") ;
+    }
+
+    #[test]
+    fn switches_from_bonjour_to_file() {
+        let mut log = Logger::new() ;
+        log.log_b(Some(Domain::App), Level::Warning, "message first logged to Bonjour") ;
+
+        log.set_message_flushing(true) ;
+        log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
+        log.log_b(Some(Domain::App), Level::Warning, "message shifted from Bonjour to file") ;
     }
 
     #[test]

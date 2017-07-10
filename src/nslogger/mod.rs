@@ -79,6 +79,36 @@ impl Logger {
                       } ;
     }
 
+    pub fn set_bonjour_service(&mut self, service_type:Option<&str>, service_name:Option<&str>, use_ssl:bool) {
+        if self.shared_state.lock().unwrap().ready {
+            let mut properties = HashMap::new() ;
+
+            if let Some(name_value) = service_name {
+                properties.insert("bonjour_service".to_string(), String::from(name_value)) ;
+            }
+
+            if let Some(type_value) = service_type {
+                properties.insert("bonjour_type".to_string(), String::from(type_value)) ;
+            }
+
+            properties.insert("use_ssl".to_string(), String::from(if use_ssl { "1" } else { "0" })) ;
+
+            self.message_sender.send(HandlerMessageType::OPTION_CHANGE(properties)) ;
+        }
+        else {
+            // Worker thread isn't yet setup
+            let mut local_shared_state = self.shared_state.lock().unwrap() ;
+            local_shared_state.bonjour_service_name = service_name.and_then( |v| Some(v.to_string()) ) ;
+            local_shared_state.bonjour_service_type = service_type.and_then( |v| Some(v.to_string()) ) ;
+
+            if use_ssl {
+                local_shared_state.options = local_shared_state.options | USE_SSL ;
+            } else {
+                local_shared_state.options = local_shared_state.options - USE_SSL ;
+            }
+        }
+    }
+
 
     pub fn set_remote_host(&mut self, host_name:&str, host_port:u16, use_ssl:bool) {
         if DEBUG_LOGGER {
@@ -126,9 +156,9 @@ impl Logger {
     pub fn set_message_flushing(&mut self, flush_each_message:bool) {
         let mut local_state = self.shared_state.lock().unwrap() ;
         if flush_each_message {
-            local_state.options = local_state.options | FLUSH_EACH_MESSAGE ;
+            local_state.options |= FLUSH_EACH_MESSAGE ;
         } else {
-            local_state.options = local_state.options - FLUSH_EACH_MESSAGE ;
+            local_state.options -= FLUSH_EACH_MESSAGE ;
         }
     }
 
@@ -326,6 +356,9 @@ impl Logger {
 
     fn send_and_flush_if_required(& self, mut log_message:LogMessage) {
         let needs_flush = !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty() ;
+        if DEBUG_LOGGER && !needs_flush {
+            warn!(target:"NSLogger", "no need to flush!!") ;
+        }
         let mut flush_rx:Option<mpsc::Receiver<bool>> = None ;
         if needs_flush {
             flush_rx = log_message.flush_rx.take() ;
@@ -338,6 +371,9 @@ impl Logger {
                 info!(target:"NSLogger", "waiting for message flush") ;
             }
             flush_rx.unwrap().recv() ;
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "message flush ack received") ;
+            }
         }
     }
 }
