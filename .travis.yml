@@ -1,0 +1,12 @@
+language: rust
+
+sudo: false
+
+rust:
+  - beta
+  - nightly
+
+env:
+  global:
+    - RUST_BACKTRACE=1
+
