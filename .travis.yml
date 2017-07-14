@@ -6,6 +6,10 @@ rust:
   - beta
   - nightly
 
+before_install:
+  - sudo apt-get -qq update
+  - sudo apt-get install -y libavahi-compat-libdnssd-dev
+
 env:
   global:
     - RUST_BACKTRACE=1
