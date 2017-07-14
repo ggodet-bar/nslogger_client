@@ -56,7 +56,6 @@ impl Logger {
             cfg_if! {
                 if #[cfg(test)] {
                     fn init_test_logger() {
-                        println!("FOOOO") ;
                         START.call_once(|| {
 
                             env_logger::init().unwrap() ;
@@ -162,10 +161,9 @@ impl Logger {
         }
     }
 
-    // FIXME Eventually take some time to fix the method dispatch issue (using macros?)!
-    pub fn log_a(&self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level, message:&str) {
+    pub fn logl(&self, filename:Option<&Path>, line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level, message:&str) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "entering log_a") ;
+            info!(target:"NSLogger", "entering log") ;
         }
         self.start_logging_thread_if_needed() ;
 
@@ -189,16 +187,16 @@ impl Logger {
 
         self.send_and_flush_if_required(log_message) ;
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Exiting log_a") ;
+            info!(target:"NSLogger", "Exiting log") ;
         }
     }
 
-    pub fn log_b(&self, domain: Option<Domain>, level: Level, message:&str) {
-        self.log_a(None, None, None, domain, level, message) ;
+    pub fn logm(&self, domain: Option<Domain>, level: Level, message:&str) {
+        self.logl(None, None, None, domain, level, message) ;
     }
 
-    pub fn log_c(&self, message:&str) {
-        self.log_b(None, Level::Error, message) ;
+    pub fn log(&self, message:&str) {
+        self.logm(None, Level::Error, message) ;
     }
 
 	/// Log a mark to the desktop viewer.
@@ -399,7 +397,7 @@ impl log::Log for Logger {
             return ;
         }
 
-        self.log_a(Some(Path::new(record.location().file())),
+        self.logl(Some(Path::new(record.location().file())),
                    None,
                    None,
                    Some(Domain::from_str(record.target()).unwrap()),

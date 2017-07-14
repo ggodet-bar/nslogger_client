@@ -51,20 +51,20 @@ mod tests {
     fn connects_via_bonjour_with_ssl() {
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
-        log.log_b(Some(Domain::App), Level::Warning, "test") ;
+        log.logm(Some(Domain::App), Level::Warning, "test") ;
     }
 
     #[test]
     fn creates_logger_instance() {
         let log = Logger::new() ;
-        log.log_b(Some(Domain::App), Level::Warning, "test") ;
-        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
-        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
-        log.log_b(Some(Domain::DB), Level::Warning, "test") ;
-        log.log_b(Some(Domain::DB), Level::Error, "test1") ;
-        log.log_b(Some(Domain::DB), Level::Debug, "test2") ;
-        log.log_b(Some(Domain::Custom("MyCustomDomain".to_string())), Level::Debug, "Tag test!") ;
-        log.log_c("Just a simple message") ;
+        log.logm(Some(Domain::App), Level::Warning, "test") ;
+        log.logm(Some(Domain::DB), Level::Error, "test1") ;
+        log.logm(Some(Domain::DB), Level::Debug, "test2") ;
+        log.logm(Some(Domain::DB), Level::Warning, "test") ;
+        log.logm(Some(Domain::DB), Level::Error, "test1") ;
+        log.logm(Some(Domain::DB), Level::Debug, "test2") ;
+        log.logm(Some(Domain::Custom("MyCustomDomain".to_string())), Level::Debug, "Tag test!") ;
+        log.log("Just a simple message") ;
         //thread::sleep(Duration::from_secs(100)) ;
     }
 
@@ -72,7 +72,7 @@ mod tests {
     fn logs_empty_domain() {
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
-        log.log_b(Some(Domain::Custom("".to_string())), Level::Warning, "no domain should appear") ;
+        log.logm(Some(Domain::Custom("".to_string())), Level::Warning, "no domain should appear") ;
     }
 
     #[test]
@@ -92,8 +92,8 @@ mod tests {
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
         log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
-        log.log_b(Some(Domain::App), Level::Warning, "message logged to file") ;
-        log.log_b(Some(Domain::DB), Level::Warning, "other message logged to file") ;
+        log.logm(Some(Domain::App), Level::Warning, "message logged to file") ;
+        log.logm(Some(Domain::DB), Level::Warning, "other message logged to file") ;
 
         let file_path = Path::new("/tmp/ns_logger.rawnsloggerdata") ;
         assert!(file_path.exists()) ;
@@ -108,23 +108,23 @@ mod tests {
         let mut log = Logger::new() ;
         log.set_message_flushing(true) ;
         log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
-        log.log_b(Some(Domain::App), Level::Warning, "message logged to file") ;
+        log.logm(Some(Domain::App), Level::Warning, "message logged to file") ;
 
         log.set_bonjour_service(None, None, false) ;
         //log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
         log.set_message_flushing(true) ;
         // FIXME Won't work: the change_option method will probably still be running
-        log.log_b(Some(Domain::App), Level::Warning, "message previously logged to file") ;
+        log.logm(Some(Domain::App), Level::Warning, "message previously logged to file") ;
     }
 
     #[test]
     fn switches_from_bonjour_to_file() {
         let mut log = Logger::new() ;
-        log.log_b(Some(Domain::App), Level::Warning, "message first logged to Bonjour") ;
+        log.logm(Some(Domain::App), Level::Warning, "message first logged to Bonjour") ;
 
         log.set_message_flushing(true) ;
         log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata") ; // File extension is constrained!!
-        log.log_b(Some(Domain::App), Level::Warning, "message shifted from Bonjour to file") ;
+        log.logm(Some(Domain::App), Level::Warning, "message shifted from Bonjour to file") ;
     }
 
     #[test]
@@ -134,12 +134,12 @@ mod tests {
         let mut log = Logger::new() ;
         log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
         log.set_message_flushing(true) ;
-        log.log_b(Some(Domain::App), Level::Warning, "flush test") ;
-        log.log_b(Some(Domain::DB), Level::Error, "flush test1") ;
-        log.log_b(Some(Domain::DB), Level::Debug, "flush test2") ;
-        log.log_b(Some(Domain::DB), Level::Warning, "flush test") ;
-        log.log_b(Some(Domain::DB), Level::Error, "flush test1") ;
-        log.log_b(Some(Domain::DB), Level::Debug, "flush test2") ;
+        log.logm(Some(Domain::App), Level::Warning, "flush test") ;
+        log.logm(Some(Domain::DB), Level::Error, "flush test1") ;
+        log.logm(Some(Domain::DB), Level::Debug, "flush test2") ;
+        log.logm(Some(Domain::DB), Level::Warning, "flush test") ;
+        log.logm(Some(Domain::DB), Level::Error, "flush test1") ;
+        log.logm(Some(Domain::DB), Level::Debug, "flush test2") ;
     }
 
     #[test]
@@ -147,10 +147,10 @@ mod tests {
         let mut log = Logger::new() ;
         log.set_remote_host("127.0.0.1", 50000, true) ;
         log.set_message_flushing(true) ;
-        log.log_b(Some(Domain::App), Level::Warning, "before mark 1") ;
-        log.log_b(Some(Domain::DB), Level::Error, "before mark 2") ;
+        log.logm(Some(Domain::App), Level::Warning, "before mark 1") ;
+        log.logm(Some(Domain::DB), Level::Error, "before mark 2") ;
         log.log_mark(Some("this is a mark")) ;
-        log.log_b(Some(Domain::DB), Level::Debug, "after mark") ;
+        log.logm(Some(Domain::DB), Level::Debug, "after mark") ;
     }
 
     #[test]
@@ -158,10 +158,10 @@ mod tests {
         let mut log = Logger::new() ;
         log.set_remote_host("127.0.0.1", 50000, true) ;
         log.set_message_flushing(true) ;
-        log.log_b(Some(Domain::App), Level::Warning, "before mark 1") ;
-        log.log_b(Some(Domain::DB), Level::Error, "before mark 2") ;
+        log.logm(Some(Domain::App), Level::Warning, "before mark 1") ;
+        log.logm(Some(Domain::DB), Level::Error, "before mark 2") ;
         log.log_mark(None) ;
-        log.log_b(Some(Domain::DB), Level::Debug, "after mark") ;
+        log.logm(Some(Domain::DB), Level::Debug, "after mark") ;
     }
 
     #[test]

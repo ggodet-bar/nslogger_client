@@ -7,4 +7,5 @@ Currently missing:
 - formatting should NOT occur on the main thread
 - Convert `write_all` to `write`, which should provide a better control in case of disconnections.
 - MessageWorker & LoggerState will probably be merged
-- Remove openssl dependency using https://docs.rs/rustls/0.9.0/rustls/
+
+- Remove openssl dependency using rustls or native-tls. Note: native-tls doesn't allow disabling all verifications yet.
