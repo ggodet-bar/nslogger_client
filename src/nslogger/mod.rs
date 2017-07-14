@@ -10,7 +10,7 @@ use std::path::PathBuf ;
 
 use log ;
 
-const DEBUG_LOGGER:bool = true ;
+const DEBUG_LOGGER:bool = false ;
 
 #[cfg(test)]
 use env_logger ;
@@ -398,7 +398,7 @@ impl log::Log for Logger {
         }
 
         self.logl(Some(Path::new(record.location().file())),
-                   None,
+                   Some(record.location().line() as usize),
                    None,
                    Some(Domain::from_str(record.target()).unwrap()),
                    Level::from_log_level(record.level()),
