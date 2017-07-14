@@ -1,11 +1,12 @@
-Currently missing:
+A client for NSLogger.
 
-- integration tests. find a way to cover disconnections/reconnections.
-- some kind of counter that will record network acks and successful file writes so we can better check the logger's behavior
-- builder api for setting up the logger.
-- cargo features defining a core logger functionality (which matches the basic log macros) and additional features for enabling networking (Bonjour etc.) and non-standard features (log mark, log images, log data)
-- formatting should NOT occur on the main thread
-- Convert `write_all` to `write`, which should provide a better control in case of disconnections.
-- MessageWorker & LoggerState will probably be merged
+The `Logger` is essentially a port of the [Java
+implementation](https://github.com/fpillet/NSLogger/blob/master/Client/Android/client-code/src/com/NSLogger/NSLoggerClient.java),
+initially designed for Android. Compatible with `log` (obviously without the mark, data and
+image logging features). Tested on version 1.8.2 of the MacOS NSLogger server.
 
-- Remove openssl dependency using rustls or native-tls. Note: native-tls doesn't allow disabling all verifications yet.
+TODO:
+
+- opt-out of the networking features (esp. openssl)
+- builder pattern for logger initialization
+- possibly some optimizations.

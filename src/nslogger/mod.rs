@@ -92,7 +92,7 @@ impl Logger {
 
             properties.insert("use_ssl".to_string(), String::from(if use_ssl { "1" } else { "0" })) ;
 
-            self.message_sender.send(HandlerMessageType::OPTION_CHANGE(properties)) ;
+            self.message_sender.send(HandlerMessageType::OptionChange(properties)) ;
         }
         else {
             // Worker thread isn't yet setup
@@ -120,7 +120,7 @@ impl Logger {
             properties.insert("remote_port".to_string(), String::from(format!("{}", host_port))) ;
             properties.insert("use_ssl".to_string(), String::from(if use_ssl { "1" } else { "0" })) ;
 
-            self.message_sender.send(HandlerMessageType::OPTION_CHANGE(properties)) ;
+            self.message_sender.send(HandlerMessageType::OptionChange(properties)) ;
         }
         else {
             // Worker thread isn't yet setup
@@ -145,7 +145,7 @@ impl Logger {
             let mut properties = HashMap::new() ;
             properties.insert("filename".to_string(), String::from(file_path)) ;
 
-            self.message_sender.send(HandlerMessageType::OPTION_CHANGE(properties)) ;
+            self.message_sender.send(HandlerMessageType::OptionChange(properties)) ;
         }
         else {
             self.shared_state.lock().unwrap().log_file_path = Some(PathBuf::from(file_path.to_string())) ;
@@ -362,7 +362,7 @@ impl Logger {
             flush_rx = log_message.flush_rx.take() ;
         }
 
-        self.message_sender.send(HandlerMessageType::ADD_LOG(log_message)) ;
+        self.message_sender.send(HandlerMessageType::AddLog(log_message)) ;
 
         if needs_flush {
             if DEBUG_LOGGER {
@@ -382,7 +382,7 @@ impl Drop for Logger {
             info!(target:"NSLogger", "calling drop for logger instance") ;
         }
 
-        self.message_sender.send(HandlerMessageType::QUIT) ;
+        self.message_sender.send(HandlerMessageType::Quit) ;
 
     }
 }

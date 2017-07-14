@@ -21,12 +21,12 @@ use nslogger::{USE_SSL, BROWSE_BONJOUR} ;
 
 #[derive(Debug)]
 pub enum HandlerMessageType {
-    TRY_CONNECT,
-    CONNECT_COMPLETE,
-    ADD_LOG(LogMessage),
-    ADD_LOG_RECORD,
-    OPTION_CHANGE(HashMap<String, String>),
-    QUIT
+    TryConnect,
+    ConnectComplete,
+    AddLog(LogMessage),
+    AddLogRecord,
+    OptionChange(HashMap<String, String>),
+    Quit
 }
 
 #[derive(Debug)]
@@ -323,7 +323,7 @@ impl LoggerState
 
                                     }
 
-                                    self.message_sender.send(HandlerMessageType::TRY_CONNECT) ;
+                                    self.message_sender.send(HandlerMessageType::TryConnect) ;
                                 },
                                 Err(b) => {
                                     if DEBUG_LOGGER {
@@ -393,12 +393,9 @@ impl LoggerState
                 }
             }
 
-            self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
+        }
 
-        }
-        else {
-            self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
-        }
+        self.message_sender.send(HandlerMessageType::ConnectComplete) ;
 
         Ok( () )
     }

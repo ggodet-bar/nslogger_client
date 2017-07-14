@@ -30,7 +30,7 @@ impl MessageHandler {
                     }
 
                     match message {
-                        HandlerMessageType::ADD_LOG(message) => {
+                        HandlerMessageType::AddLog(message) => {
                             if DEBUG_LOGGER {
                                 info!(target:"NSLogger", "adding log {} to the queue", message.sequence_number) ;
                             }
@@ -52,14 +52,14 @@ impl MessageHandler {
                                 //local_shared_state.process_log_queue() ;
                             //}
                         //},
-                        HandlerMessageType::OPTION_CHANGE(new_options) => {
+                        HandlerMessageType::OptionChange(new_options) => {
                             if DEBUG_LOGGER {
                                 info!(target:"NSLogger", "options change received") ;
                             }
 
                             self.shared_state.lock().unwrap().change_options(new_options) ;
                         },
-                        HandlerMessageType::CONNECT_COMPLETE => {
+                        HandlerMessageType::ConnectComplete => {
                             if DEBUG_LOGGER {
                                 info!(target:"NSLogger", "connect complete message received") ;
                             }
@@ -71,7 +71,7 @@ impl MessageHandler {
 
                             local_shared_state.process_log_queue() ;
                         },
-                        HandlerMessageType::TRY_CONNECT => {
+                        HandlerMessageType::TryConnect => {
                             let mut local_shared_state = self.shared_state.lock().unwrap() ;
                             if DEBUG_LOGGER {
                                 info!(target:"NSLogger",
@@ -92,7 +92,7 @@ impl MessageHandler {
                             }
                         },
 
-                        HandlerMessageType::QUIT => {
+                        HandlerMessageType::Quit => {
                             break ;
                         }
                         _ => ()
