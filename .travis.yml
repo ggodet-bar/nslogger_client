@@ -1,9 +1,9 @@
 language: rust
 
-
 rust:
-  - beta
   - nightly
+
+dist: trusty
 
 before_install:
   - sudo apt-get -qq update
