@@ -353,9 +353,6 @@ impl LoggerState
     }
 
     pub fn connect_to_remote(&mut self) -> Result<(), &str> {
-        //if self.write_stream.is_some() {
-            //return Err("internal error: write_stream should be none") ;
-        //}
         if self.write_stream.is_some() {
             return Err("internal error: remote_socket should be none") ;
         }
@@ -403,33 +400,6 @@ impl LoggerState
             self.message_sender.send(HandlerMessageType::CONNECT_COMPLETE) ;
         }
 
-        //remoteSocket = new Socket(remoteHost, remotePort);
-        //if ((options & OPT_USE_SSL) != 0)
-        //{
-            //if (DEBUG_LOGGER)
-                //Log.v("NSLogger", "activating SSL connection");
-
-            //SSLSocketFactory sf = SSLCertificateSocketFactory.getInsecure(5000, null);
-            //remoteSocket = sf.createSocket(remoteSocket, remoteHost, remotePort, true);
-            //if (remoteSocket != null)
-            //{
-                //if (DEBUG_LOGGER)
-                    //Log.v("NSLogger", String.format("starting SSL handshake with %s:%d", remoteSocket.getInetAddress().toString(), remoteSocket.getPort()));
-
-                //SSLSocket socket = (SSLSocket) remoteSocket;
-                //socket.setUseClientMode(true);
-                //writeStream = remoteSocket.getOutputStream();
-                //socketSendBufferSize = remoteSocket.getSendBufferSize();
-                //loggingThreadHandler.sendMessage(loggingThreadHandler.obtainMessage(MSG_CONNECT_COMPLETE));
-            //}
-        //}
-        //else
-        //{
-            //// non-SSL sockets are immediately ready for use
-            //socketSendBufferSize = remoteSocket.getSendBufferSize();
-            //writeStream = remoteSocket.getOutputStream();
-            //loggingThreadHandler.sendMessage(loggingThreadHandler.obtainMessage(MSG_CONNECT_COMPLETE));
-        //}
         Ok( () )
     }
 

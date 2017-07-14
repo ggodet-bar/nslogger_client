@@ -9,17 +9,17 @@ crate-type = ["lib"]
 path = "src/lib.rs"
 
 [dependencies]
-async-dnssd = "0.3.0"
-futures = "0.1.14"
-tokio-core = "0.1.8"
-mio  = "0.6.9"
-bitflags = "0.9.1"
-openssl = "0.9.14"
-byteorder = "1.0.0"
-chrono = "0.4.0"
-log = "0.3.8"
+async-dnssd = "0.3"
+futures = "0.1"
+tokio-core = "0.1"
+mio  = "0.6"
+bitflags = "0.9"
+openssl = "0.9"
+byteorder = "1.0"
+chrono = "0.4"
+log = "0.3"
 cfg-if = "0.1"
-sys-info = "0.4.1"
+sys-info = "0.4"
 
 [dev-dependencies]
 env_logger = "*"
