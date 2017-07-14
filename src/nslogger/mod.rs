@@ -174,7 +174,7 @@ impl Logger {
             return ;
         }
 
-        let mut log_message = LogMessage::with_header(LogMessageType::LOG,
+        let mut log_message = LogMessage::with_header(LogMessageType::Log,
                                                       self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
                                                       filename,
                                                       line_number,
@@ -183,7 +183,7 @@ impl Logger {
                                                       level) ;
 
 
-        log_message.add_string(MessagePartKey::MESSAGE, message) ;
+        log_message.add_string(MessagePartKey::Message, message) ;
 
         self.send_and_flush_if_required(log_message) ;
         if DEBUG_LOGGER {
@@ -219,7 +219,7 @@ impl Logger {
             return ;
         }
 
-        let mut log_message = LogMessage::with_header(LogMessageType::MARK,
+        let mut log_message = LogMessage::with_header(LogMessageType::Mark,
                                                       self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
                                                       None,
                                                       None,
@@ -236,7 +236,7 @@ impl Logger {
             }
         } ;
 
-        log_message.add_string(MessagePartKey::MESSAGE, &mark_message) ;
+        log_message.add_string(MessagePartKey::Message, &mark_message) ;
 
         self.send_and_flush_if_required(log_message) ;
 
@@ -259,7 +259,7 @@ impl Logger {
             return ;
         }
 
-        let mut log_message = LogMessage::with_header(LogMessageType::LOG,
+        let mut log_message = LogMessage::with_header(LogMessageType::Log,
                                                       self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
                                                       filename,
                                                       line_number,
@@ -267,7 +267,7 @@ impl Logger {
                                                       domain,
                                                       level) ;
 
-        log_message.add_binary_data(MessagePartKey::MESSAGE, data) ;
+        log_message.add_binary_data(MessagePartKey::Message, data) ;
 
         self.send_and_flush_if_required(log_message) ;
 
@@ -290,7 +290,7 @@ impl Logger {
             return ;
         }
 
-        let mut log_message = LogMessage::with_header(LogMessageType::LOG,
+        let mut log_message = LogMessage::with_header(LogMessageType::Log,
                                                       self.shared_state.lock().unwrap().get_and_increment_sequence_number(),
                                                       filename,
                                                       line_number,
@@ -298,7 +298,7 @@ impl Logger {
                                                       domain,
                                                       level) ;
 
-        log_message.add_image_data(MessagePartKey::MESSAGE, data) ;
+        log_message.add_image_data(MessagePartKey::Message, data) ;
 
         self.send_and_flush_if_required(log_message) ;
 

@@ -5,7 +5,7 @@ implementation](https://github.com/fpillet/NSLogger/blob/master/Client/Android/c
 initially designed for Android. Compatible with `log` (obviously without the mark, data and
 image logging features). Tested on version 1.8.2 of the MacOS NSLogger server.
 
-TODO:
+## TODO:
 
 - opt-out of the networking features (esp. openssl)
 - builder pattern for logger initialization

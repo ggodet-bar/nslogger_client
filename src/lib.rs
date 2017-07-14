@@ -15,7 +15,6 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#![feature(rustc_private)]
 #![feature(integer_atomics)]
 #![feature(ip)]
 #![feature(thread_id)]
@@ -27,7 +26,7 @@
 //! initially designed for Android. Compatible with `log` (obviously without the mark, data and
 //! image logging features). Tested on version 1.8.2 of the MacOS NSLogger server.
 //!
-//! TODO:
+//! ## TODO:
 //!
 //! - opt-out of the networking features (esp. openssl)
 //! - builder pattern for logger initialization

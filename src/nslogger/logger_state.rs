@@ -155,14 +155,14 @@ impl LoggerState
             info!(target:"NSLogger", "pushing client info to front of queue") ;
         }
 
-        let mut message = LogMessage::new(LogMessageType::CLIENT_INFO, self.get_and_increment_sequence_number()) ;
+        let mut message = LogMessage::new(LogMessageType::ClientInfo, self.get_and_increment_sequence_number()) ;
 
         match sys_info::os_type() {
             Ok(name) => {
-                message.add_string(MessagePartKey::OS_NAME, &name) ;
+                message.add_string(MessagePartKey::OsName, &name) ;
 
                 match sys_info::os_release() {
-                    Ok(release) => message.add_string(MessagePartKey::OS_VERSION, &release),
+                    Ok(release) => message.add_string(MessagePartKey::OsVersion, &release),
                     _ => ()
                 } ;
             },
@@ -177,7 +177,7 @@ impl LoggerState
                                             .map(String::from) ;
 
         if process_name.is_some() {
-            message.add_string(MessagePartKey::CLIENT_NAME, &process_name.unwrap()) ;
+            message.add_string(MessagePartKey::ClientName, &process_name.unwrap()) ;
         }
 
 
@@ -289,7 +289,7 @@ impl LoggerState
             let mut core = Core::new().unwrap() ;
             let handle = core.handle() ;
 
-            let mut listener = async_dnssd::browse(Interface::Any, service_type, None, &handle).unwrap() ;
+            let listener = async_dnssd::browse(Interface::Any, service_type, None, &handle).unwrap() ;
 
             let timeout = Timeout::new(Duration::from_secs(5), &handle).unwrap() ;
             match core.run(listener.into_future().select2(timeout)) {
@@ -303,7 +303,7 @@ impl LoggerState
                            }
                             self.bonjour_service_name = Some(browse_result.service_name.to_string()) ;
                             match core.run(browse_result.resolve(&handle).unwrap().into_future()) {
-                                Ok( (resolve_result, resolve) ) => {
+                                Ok( (resolve_result, _) ) => {
                                     let resolve_details = resolve_result.unwrap() ;
                                     if DEBUG_LOGGER {
                                         info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
@@ -325,21 +325,21 @@ impl LoggerState
 
                                     self.message_sender.send(HandlerMessageType::TryConnect) ;
                                 },
-                                Err(b) => {
+                                Err(_) => {
                                     if DEBUG_LOGGER {
                                         warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
                                     }
                                 }
                             } ;
                         },
-                        Either::B( ( timeout, browse ) ) => {
+                        Either::B( ( _, _ ) ) => {
                             if DEBUG_LOGGER {
                                 warn!(target:"NSLogger", "Bonjour discovery timed out")
                             }
                         }
                     }
                 },
-                Err(b) => if DEBUG_LOGGER {
+                Err(_) => if DEBUG_LOGGER {
                     warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
                 }
 
@@ -367,7 +367,7 @@ impl LoggerState
         let connect_string = format!("{}:{}", remote_host, self.remote_port.unwrap()) ;
         let stream = match TcpStream::connect(connect_string) {
             Ok(s) => s,
-            Err(e) => return Err("error occurred during tcp stream connection")
+            Err(_) => return Err("error occurred during tcp stream connection")
         } ;
 
         if DEBUG_LOGGER {
@@ -442,8 +442,6 @@ impl LoggerState
 
 
     pub fn close_buffer_write_stream(&mut self) {
-        use std::io::Write ;
-
         if DEBUG_LOGGER && self.write_stream.is_some() {
             info!(target:"NSLogger", "Closing buffer stream") ;
         }

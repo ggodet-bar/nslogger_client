@@ -6,7 +6,7 @@ use nslogger::logger_state::{ HandlerMessageType, LoggerState } ;
 use nslogger::message_handler::MessageHandler ;
 
 use nslogger::DEBUG_LOGGER ;
-use nslogger::{USE_SSL, BROWSE_BONJOUR} ;
+use nslogger::BROWSE_BONJOUR ;
 
 pub struct MessageWorker
 {

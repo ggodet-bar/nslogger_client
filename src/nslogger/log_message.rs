@@ -81,50 +81,50 @@ impl Level {
 
 #[derive(Copy,Clone)]
 pub enum MessagePartKey {
-    MESSAGE_TYPE  = 0,
-    TIMESTAMP_S   = 1,    // "seconds" component of timestamp
-    TIMESTAMP_MS  = 2,    // milliseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_US)
-    TIMESTAMP_US  = 3,    // microseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_MS)
-    THREAD_ID     = 4,
-    TAG           = 5,
-    LEVEL         = 6,
-    MESSAGE       = 7,
-    IMAGE_WIDTH   = 8,    // messages containing an image should also contain a part with the image size
-    IMAGE_HEIGHT  = 9,    // (this is mainly for the desktop viewer to compute the cell size without having to immediately decode the image)
-    MESSAGE_SEQ   = 10,   // the sequential number of this message which indicates the order in which messages are generated
-    FILENAME      = 11,   // when logging, message can contain a file name
-    LINENUMBER    = 12,   // as well as a line number
-    FUNCTIONNAME  = 13,   // and a function or method name
+    MessageType   = 0,
+    TimestampS    = 1,    // "seconds" component of timestamp
+    TimestampMs   = 2,    // milliseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_US)
+    TimestampUs   = 3,    // microseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_MS)
+    ThreadId      = 4,
+    Tag           = 5,
+    Level         = 6,
+    Message       = 7,
+    ImageWidth    = 8,    // messages containing an image should also contain a part with the image size
+    ImageHeight   = 9,    // (this is mainly for the desktop viewer to compute the cell size without having to immediately decode the image)
+    MessageSeq    = 10,   // the sequential number of this message which indicates the order in which messages are generated
+    FileName      = 11,   // when logging, message can contain a file name
+    LineNumber    = 12,   // as well as a line number
+    FunctionName  = 13,   // and a function or method name
 
     // Client info
-    CLIENT_NAME   = 20,
-    CLIENT_VERSION = 21,  // unreachable from Rust
-    OS_NAME       = 22,
-    OS_VERSION    = 23,
-    CLIENT_MODEL  = 24,   // Android-specific
-    UNIQUE_ID     = 25,   // Android-specific
+    ClientName    = 20,
+    ClientVersion = 21,  // unreachable from Rust
+    OsName        = 22,
+    OsVersion     = 23,
+    ClientModel   = 24,   // Android-specific
+    UniqueId      = 25,   // Android-specific
 
-    USER_DEFINED  = 100,
+    UserDefined   = 100,
 }
 
 #[derive(Copy,Clone)]
 enum MessagePartType {
-    STRING = 0,     // Strings are stored as UTF-8 data
-    BINARY = 1,     // A block of binary data
-    INT16 = 2,
-    INT32 = 3,
-    INT64 = 4,
-    IMAGE = 5,      // An image, stored in PNG format
+    String = 0,     // Strings are stored as UTF-8 data
+    Binary = 1,     // A block of binary data
+    Int16 = 2,
+    Int32 = 3,
+    Int64 = 4,
+    Image = 5,      // An image, stored in PNG format
 }
 
 #[derive(Copy,Clone)]
 pub enum LogMessageType {
-    LOG = 0,               // A standard log message
-    BLOCK_START,       // The start of a "block" (a group of log entries)
-    BLOCK_END,         // The end of the last started "block"
-    CLIENT_INFO,       // Information about the client app
-    DISCONNECT,        // Pseudo-message on the desktop side to identify client disconnects
-    MARK               // Pseudo-message that defines a "mark" that users can place in the log flow
+    Log = 0,               // A standard log message
+    BlockStart,       // The start of a "block" (a group of log entries)
+    BlockEnd,         // The end of the last started "block"
+    ClientInfo,       // Information about the client app
+    Disconnect,        // Pseudo-message on the desktop side to identify client disconnects
+    Mark               // Pseudo-message that defines a "mark" that users can place in the log flow
 }
 
 
@@ -150,8 +150,8 @@ impl LogMessage {
                                            flush_rx: Some(flush_rx),
                                            flush_tx: flush_tx } ;
 
-        new_message.add_int32(MessagePartKey::MESSAGE_TYPE, message_type as u32) ;
-        new_message.add_int32(MessagePartKey::MESSAGE_SEQ, sequence_number) ;
+        new_message.add_int32(MessagePartKey::MessageType, message_type as u32) ;
+        new_message.add_int32(MessagePartKey::MessageSeq, sequence_number) ;
         new_message.add_timestamp(0) ;
         new_message.add_thread_id(thread::current()) ;
 
@@ -162,24 +162,24 @@ impl LogMessage {
                        line_number:Option<usize>, method:Option<&str>, domain:Option<Domain>, level:Level) -> LogMessage {
         let mut new_message = LogMessage::new(message_type, sequence_number) ;
 
-        new_message.add_int16(MessagePartKey::LEVEL, level as u16) ;
+        new_message.add_int16(MessagePartKey::Level, level as u16) ;
 
         if let Some(path) = filename {
-            new_message.add_string(MessagePartKey::FILENAME, path.to_str().expect("Invalid path encoding")) ;
+            new_message.add_string(MessagePartKey::FileName, path.to_str().expect("Invalid path encoding")) ;
 
             if let Some(nb) = line_number {
-                new_message.add_int32(MessagePartKey::LINENUMBER, nb as u32) ;
+                new_message.add_int32(MessagePartKey::LineNumber, nb as u32) ;
             }
         }
 
         if let Some(method_name) = method {
-            new_message.add_string(MessagePartKey::FUNCTIONNAME, method_name) ;
+            new_message.add_string(MessagePartKey::FunctionName, method_name) ;
         }
 
         if let Some(domain_tag) = domain {
             let tag_string = domain_tag.to_string() ;
             if !tag_string.is_empty() {
-                new_message.add_string(MessagePartKey::TAG, &tag_string) ;
+                new_message.add_string(MessagePartKey::Tag, &tag_string) ;
             }
         } ;
         new_message
@@ -188,7 +188,7 @@ impl LogMessage {
     pub fn add_int64(&mut self, key:MessagePartKey, value:u64) {
         self.data_used += 10 ;
         self.data.write_u8(key as u8).unwrap() ;
-        self.data.write_u8(MessagePartType::INT64 as u8).unwrap() ;
+        self.data.write_u8(MessagePartType::Int64 as u8).unwrap() ;
         self.data.write_u64::<NetworkEndian>(value as u64).unwrap() ;
         self.part_count += 1 ;
     }
@@ -196,7 +196,7 @@ impl LogMessage {
     pub fn add_int32(&mut self, key:MessagePartKey, value:u32) {
         self.data_used += 6 ;
         self.data.write_u8(key as u8).unwrap() ;
-        self.data.write_u8(MessagePartType::INT32 as u8).unwrap() ;
+        self.data.write_u8(MessagePartType::Int32 as u8).unwrap() ;
         self.data.write_u32::<NetworkEndian>(value as u32).unwrap() ;
         self.part_count += 1 ;
     }
@@ -204,17 +204,17 @@ impl LogMessage {
     pub fn add_int16(&mut self, key:MessagePartKey, value:u16) {
         self.data_used += 4 ;
         self.data.write_u8(key as u8).unwrap() ;
-        self.data.write_u8(MessagePartType::INT16 as u8).unwrap() ;
+        self.data.write_u8(MessagePartType::Int16 as u8).unwrap() ;
         self.data.write_u16::<NetworkEndian>(value as u16).unwrap() ;
         self.part_count += 1 ;
     }
 
     pub fn add_binary_data(&mut self, key:MessagePartKey, bytes:&[u8]) {
-        self.add_bytes(key, MessagePartType::BINARY, bytes) ;
+        self.add_bytes(key, MessagePartType::Binary, bytes) ;
     }
 
     pub fn add_image_data(&mut self, key:MessagePartKey, bytes:&[u8]) {
-        self.add_bytes(key, MessagePartType::IMAGE, bytes) ;
+        self.add_bytes(key, MessagePartType::Image, bytes) ;
     }
 
     fn add_bytes(&mut self, key:MessagePartKey, data_type:MessagePartType, bytes:&[u8]) {
@@ -228,7 +228,7 @@ impl LogMessage {
     }
 
     pub fn add_string(&mut self, key:MessagePartKey, string:&str) {
-        self.add_bytes(key, MessagePartType::STRING, string.as_bytes()) ;
+        self.add_bytes(key, MessagePartType::String, string.as_bytes()) ;
     }
 
     fn add_timestamp(&mut self, value:u64) {
@@ -239,8 +239,8 @@ impl LogMessage {
             value
         } ;
 
-        self.add_int64(MessagePartKey::TIMESTAMP_S, actual_value / 1000) ;
-        self.add_int16(MessagePartKey::TIMESTAMP_MS, (actual_value % 1000) as u16) ;
+        self.add_int64(MessagePartKey::TimestampS, actual_value / 1000) ;
+        self.add_int16(MessagePartKey::TimestampMs, (actual_value % 1000) as u16) ;
     }
 
     fn add_thread_id(&mut self, thread:thread::Thread) {
@@ -249,7 +249,7 @@ impl LogMessage {
             None => format!("{:?}", thread.id())
         } ;
 
-        self.add_string(MessagePartKey::THREAD_ID, &thread_name) ;
+        self.add_string(MessagePartKey::ThreadId, &thread_name) ;
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
