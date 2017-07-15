@@ -71,26 +71,7 @@ impl MessageHandler {
 
                             local_shared_state.process_log_queue() ;
                         },
-                        HandlerMessageType::TryConnect => {
-                            let mut local_shared_state = self.shared_state.lock().unwrap() ;
-                            if DEBUG_LOGGER {
-                                info!(target:"NSLogger",
-                                      "try connect message received, remote socket is {:?}, connecting={:?}",
-                                      local_shared_state.write_stream,
-                                      local_shared_state.is_connecting) ;
-                            }
-
-                            local_shared_state.is_reconnection_scheduled = false ;
-
-                            if local_shared_state.write_stream.is_none() /* && local_shared_state.write_stream.is_none() */ {
-                                if !local_shared_state.is_connecting
-                                        && local_shared_state.remote_host.is_some()
-                                        && local_shared_state.remote_port.is_some() {
-                                    local_shared_state.connect_to_remote() ;
-                                }
-
-                            }
-                        },
+                        HandlerMessageType::TryConnect => self.try_connect(),
 
                         HandlerMessageType::Quit => {
                             break ;
@@ -109,6 +90,27 @@ impl MessageHandler {
 
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "leaving message handler loop") ;
+        }
+    }
+
+    fn try_connect(&self) {
+        let mut local_shared_state = self.shared_state.lock().unwrap() ;
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger",
+                  "try connect message received, remote socket is {:?}, connecting={:?}",
+                  local_shared_state.write_stream,
+                  local_shared_state.is_connecting) ;
+        }
+
+        local_shared_state.is_reconnection_scheduled = false ;
+
+        if local_shared_state.write_stream.is_none() {
+            if !local_shared_state.is_connecting
+                    && local_shared_state.remote_host.is_some()
+                    && local_shared_state.remote_port.is_some() {
+                local_shared_state.connect_to_remote() ;
+            }
+
         }
     }
 }

@@ -28,6 +28,7 @@
 //!
 //! ## TODO:
 //!
+//! - log in-memory if there's no network stream to connect to
 //! - opt-out of the networking features (esp. openssl)
 //! - builder pattern for logger initialization
 //! - possibly some optimizations.

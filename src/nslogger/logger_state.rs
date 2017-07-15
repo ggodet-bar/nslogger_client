@@ -121,8 +121,20 @@ impl LoggerState
             self.push_client_info_to_front_of_queue() ;
         }
 
+        if self.write_stream.is_none() {
+            if self.log_file_path.is_some() {
+                self.create_buffer_write_stream() ;
+            }
+            else if !(self.is_connecting
+                      || self.is_reconnection_scheduled
+                      || !(self.options & BROWSE_BONJOUR).is_empty() )
+                    && self.remote_host.is_some()
+                    && self.remote_port.is_some() {
+                self.connect_to_remote() ;
+            }
 
-        // FIXME TONS OF STUFF SKIPPED!!
+            return ;
+        }
 
         if self.remote_host.is_none() {
             self.flush_queue_to_buffer_stream() ;
@@ -262,7 +274,7 @@ impl LoggerState
         self.connect_to_remote() ;
     }
 
-    pub fn setup_bonjour(&mut self) {
+    pub fn setup_bonjour(&mut self) -> io::Result<()> {
         use tokio_core::reactor::{Core,Timeout} ;
         use futures::future::Either ;
         use async_dnssd ;
@@ -289,7 +301,7 @@ impl LoggerState
             let mut core = Core::new().unwrap() ;
             let handle = core.handle() ;
 
-            let listener = async_dnssd::browse(Interface::Any, service_type, None, &handle).unwrap() ;
+            let listener = async_dnssd::browse(Interface::Any, service_type, None, &handle)? ;
 
             let timeout = Timeout::new(Duration::from_secs(5), &handle).unwrap() ;
             match core.run(listener.into_future().select2(timeout)) {
@@ -345,6 +357,8 @@ impl LoggerState
 
             } ;
         }
+
+        Ok( () )
     }
 
 
@@ -419,7 +433,26 @@ impl LoggerState
     }
 
     fn try_reconnecting(&mut self) {
-        // TODO
+        if self.is_reconnection_scheduled {
+            return ;
+        }
+
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "try_reconnecting") ;
+        }
+
+        if !(self.options & BROWSE_BONJOUR).is_empty() {
+            // TODO: Bonjour
+				/*
+				if (bonjourBrowser == null)
+					setupBonjour();
+					*/
+        }
+        else {
+            self.is_reconnection_scheduled = true ;
+            // FIXME Should send with 2s delay
+            self.message_sender.send(HandlerMessageType::TryConnect) ;
+        }
     }
 
     pub fn create_buffer_write_stream(&mut self) {
