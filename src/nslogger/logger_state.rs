@@ -135,7 +135,7 @@ impl LoggerState
             let message_sender = self.message_sender.clone() ;
 
             thread::spawn( move || {
-                network_manager::NetworkManager::new(action_receiver, message_sender).run() ;
+                network_manager::NetworkManager::new(action_receiver, message_sender, network_manager::DefaultBonjourService::new()).run() ;
             }) ;
         }
 

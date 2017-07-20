@@ -11,6 +11,10 @@ use futures::{Stream,Future} ;
 use nslogger::DEBUG_LOGGER ;
 use nslogger::logger_state::HandlerMessageType ;
 
+pub trait BonjourService {
+    fn setup_bonjour<T:BonjourService>(&mut self, service_name:&str, delay_ms:Option<u64>) -> io::Result<BonjourServiceStatus> ;
+}
+
 pub enum NetworkActionMessage {
     SetupBonjour(String),
 }
@@ -21,25 +25,22 @@ enum BonjourServiceStatus {
     Unresolved,
 }
 
-pub struct NetworkManager {
+pub struct NetworkManager<T:BonjourService> {
     action_receiver:mpsc::Receiver<NetworkActionMessage>,
     message_sender:mpsc::Sender<HandlerMessageType>,
 
-    core:Core,
-    handle:Handle,
+    bonjour_service:T,
 }
 
-impl NetworkManager {
+impl <T:BonjourService> NetworkManager<T> {
     pub fn new(action_receiver:mpsc::Receiver<NetworkActionMessage>,
-               message_sender:mpsc::Sender<HandlerMessageType>) -> NetworkManager {
-        let core = Core::new().unwrap() ;
-        let handle = core.handle() ;
+               message_sender:mpsc::Sender<HandlerMessageType>,
+               bonjour_service:T) -> NetworkManager<T> {
         NetworkManager {
             action_receiver:action_receiver,
             message_sender:message_sender,
 
-            core:core,
-            handle:handle
+            bonjour_service:bonjour_service
         }
     }
     pub fn run(&mut self) {
@@ -59,7 +60,7 @@ impl NetworkManager {
                             let mut is_connected = false ;
                             let mut current_delay:Option<u64> = None ;
                             while !is_connected {
-                                match self.setup_bonjour(&service_name, current_delay) {
+                                match self.bonjour_service.setup_bonjour::<T>(&service_name, current_delay) {
                                     Ok(BonjourServiceStatus::ServiceFound(bonjour_service_name, host, port)) => {
                                         self.message_sender.send(HandlerMessageType::TryConnectBonjour(bonjour_service_name, host, port)) ;
                                         is_connected = true ;
@@ -96,8 +97,28 @@ impl NetworkManager {
             info!(target:"NSLogger", "stopping network manager") ;
         }
     }
+}
 
-    fn setup_bonjour(&mut self, service_name:&str, delay_ms:Option<u64>) -> io::Result<BonjourServiceStatus> {
+pub struct DefaultBonjourService {
+    core:Core,
+    handle:Handle,
+}
+
+impl DefaultBonjourService {
+    pub fn new() -> DefaultBonjourService {
+        let core = Core::new().unwrap() ;
+        let handle = core.handle() ;
+
+        DefaultBonjourService {
+            core:core,
+            handle:handle,
+        }
+    }
+}
+
+impl BonjourService for DefaultBonjourService {
+
+    fn setup_bonjour<T:BonjourService>(&mut self, service_name:&str, delay_ms:Option<u64>) -> io::Result<BonjourServiceStatus> {
 
         let listener = async_dnssd::browse(Interface::Any, service_name, None, &self.handle).unwrap() ;
 
