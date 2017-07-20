@@ -26,7 +26,6 @@ pub enum HandlerMessageType {
     TryConnectBonjour(String, String, u16),
     ConnectComplete,
     AddLog(LogMessage),
-    AddLogRecord,
     OptionChange(HashMap<String, String>),
     Quit
 }
@@ -130,14 +129,7 @@ impl LoggerState
             info!(target:"NSLogger", "process_log_queue") ;
         }
 
-        if self.action_receiver.is_some() {
-            let action_receiver = self.action_receiver.take().unwrap() ;
-            let message_sender = self.message_sender.clone() ;
-
-            thread::spawn( move || {
-                network_manager::NetworkManager::new(action_receiver, message_sender, network_manager::DefaultBonjourService::new()).run() ;
-            }) ;
-        }
+        self.setup_network_manager_if_required() ;
 
         if !self.is_client_info_added
         {
@@ -182,6 +174,19 @@ impl LoggerState
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "[{:?}] finished processing log queue", thread::current().id()) ;
         }
+    }
+
+    fn setup_network_manager_if_required(&mut self) {
+        if self.action_receiver.is_none() {
+            return ;
+        }
+
+        let action_receiver = self.action_receiver.take().unwrap() ;
+        let message_sender = self.message_sender.clone() ;
+
+        thread::spawn( move || {
+            network_manager::NetworkManager::new(action_receiver, message_sender, network_manager::DefaultBonjourService::new()).run() ;
+        }) ;
     }
 
     fn push_client_info_to_front_of_queue(&mut self) {

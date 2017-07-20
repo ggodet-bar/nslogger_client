@@ -41,17 +41,6 @@ impl MessageHandler {
                                 local_shared_state.process_log_queue() ;
                             //}
                         },
-                        // NOTE Depends on the LogRecord concept that seems Java-specific
-                        //HandlerMessageType::ADD_LOG_RECORD => {
-                            //if DEBUG_LOGGER {
-                                //info!(target:"NSLogger", "adding LogRecord to the queue") ;
-                            //}
-                            //let mut local_shared_state = self.shared_state.lock().unwrap() ;
-                            //local_shared_state.log_messages.push(LogMessage::new(
-                            //if local_shared_state.is_connected {
-                                //local_shared_state.process_log_queue() ;
-                            //}
-                        //},
                         HandlerMessageType::OptionChange(new_options) => {
                             if DEBUG_LOGGER {
                                 info!(target:"NSLogger", "options change received") ;
