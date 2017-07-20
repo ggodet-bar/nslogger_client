@@ -471,6 +471,20 @@ impl LoggerState
     }
 
     fn write_messages_to_stream(&mut self) {
+        match self.do_write_messages_to_stream() {
+            Ok(_) => (),
+            Err(e) => {
+                if DEBUG_LOGGER {
+                    warn!(target:"NSLogger", "Write to stream failed: {:?}", e) ;
+                }
+
+                self.disconnect_from_remote() ;
+                self.try_reconnecting() ;
+            }
+        } ;
+    }
+
+    fn do_write_messages_to_stream(&mut self) -> io::Result<()> {
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len()) ;
         }
@@ -496,7 +510,8 @@ impl LoggerState
 
                 {
                     let mut tcp_stream = self.write_stream.as_mut().unwrap() ;
-                    tcp_stream.write_all(message_bytes).expect("Write to stream failed") ;
+
+                    try![ tcp_stream.write_all(message_bytes) ] ;
                 }
 
                 match message.flush_rx {
@@ -508,5 +523,7 @@ impl LoggerState
 
             self.log_messages.remove(0) ;
         }
+
+        Ok( () )
     }
 }

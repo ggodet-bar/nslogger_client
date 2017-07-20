@@ -10,7 +10,7 @@ use std::path::PathBuf ;
 
 use log ;
 
-const DEBUG_LOGGER:bool = true ;
+static DEBUG_LOGGER:bool = true ;
 
 #[cfg(test)]
 use env_logger ;
