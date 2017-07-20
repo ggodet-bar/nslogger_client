@@ -150,10 +150,14 @@ impl LoggerState
             }
             else if !(self.is_connecting
                       || self.is_reconnection_scheduled
-                      || !(self.options & BROWSE_BONJOUR).is_empty() )
-                    && self.remote_host.is_some()
-                    && self.remote_port.is_some() {
-                self.connect_to_remote() ;
+                      || !(self.options & BROWSE_BONJOUR).is_empty() ) {
+
+                if self.remote_host.is_some() && self.remote_port.is_some() {
+                    self.connect_to_remote() ;
+                }
+                else {
+                    self.setup_bonjour() ;
+                }
             }
 
             return ;
@@ -163,7 +167,7 @@ impl LoggerState
             self.flush_queue_to_buffer_stream() ;
         }
         else if self.write_stream.is_none() {
-            // the host is set by the socket isn't opened yet
+            // the host is set but the socket isn't opened yet
             self.disconnect_from_remote() ;
             self.try_reconnecting() ;
         }
@@ -298,14 +302,6 @@ impl LoggerState
     }
 
     pub fn setup_bonjour(&mut self) -> io::Result<()> {
-        use tokio_core::reactor::{Core,Timeout} ;
-        use futures::future::Either ;
-        use async_dnssd ;
-        use async_dnssd::Interface ;
-        use std::net::ToSocketAddrs ;
-        use std::time::Duration ;
-        use futures::{Stream,Future} ;
-
         if (self.options & BROWSE_BONJOUR).is_empty() {
             self.close_bonjour() ;
         }
