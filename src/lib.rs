@@ -28,6 +28,9 @@
 //!
 //! ## TODO:
 //!
+//! - networking code (setup_bonjour etc.) should probably be run on its own thread, which would
+//!   provide simple conditions for writing delayed dispatches and reconnects
+//!
 //! - log in-memory if there's no network stream to connect to
 //! - opt-out of the networking features (esp. openssl)
 //! - builder pattern for logger initialization
@@ -78,9 +81,17 @@ mod tests {
 
     #[test]
     fn connects_via_bonjour_with_ssl() {
+        use std::{thread, time} ;
         let mut log = Logger::new() ;
-        log.set_message_flushing(true) ;
-        log.logm(Some(Domain::App), Level::Warning, "test") ;
+        //log.set_message_flushing(true) ;
+        log.logm(Some(Domain::App), Level::Warning, "test1") ;
+        log.logm(Some(Domain::App), Level::Warning, "test2") ;
+        log.logm(Some(Domain::App), Level::Warning, "test3") ;
+
+        //let ten_millis = time::Duration::from_secs(50);
+        //let now = time::Instant::now();
+
+        //thread::sleep(ten_millis);
     }
 
     #[test]

@@ -20,6 +20,7 @@ use std::sync::{Once, ONCE_INIT} ;
 #[cfg(test)]
 static START: Once = ONCE_INIT ;
 
+mod network_manager ;
 mod log_message ;
 mod message_handler ;
 mod logger_state ;

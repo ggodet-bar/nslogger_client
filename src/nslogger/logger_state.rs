@@ -14,6 +14,7 @@ use openssl ;
 use openssl::ssl::{SslMethod, SslConnectorBuilder, SslStream} ;
 
 use nslogger::log_message::{LogMessage, LogMessageType, MessagePartKey} ;
+use nslogger::network_manager ;
 
 use nslogger::DEBUG_LOGGER ;
 use nslogger::LoggerOptions ;
@@ -22,6 +23,7 @@ use nslogger::{USE_SSL, BROWSE_BONJOUR} ;
 #[derive(Debug)]
 pub enum HandlerMessageType {
     TryConnect,
+    TryConnectBonjour(String, String, u16),
     ConnectComplete,
     AddLog(LogMessage),
     AddLogRecord,
@@ -82,11 +84,16 @@ pub struct LoggerState
     pub message_receiver:Option<mpsc::Receiver<HandlerMessageType>>,
 
     pub log_file_path:Option<PathBuf>,
+
+    pub action_sender:mpsc::Sender<network_manager::NetworkActionMessage>,
+    pub action_receiver:Option<mpsc::Receiver<network_manager::NetworkActionMessage>>,
 }
 
 impl LoggerState
 {
     pub fn new(message_sender:mpsc::Sender<HandlerMessageType>, message_receiver:mpsc::Receiver<HandlerMessageType>) -> LoggerState {
+        let (action_sender, action_receiver) = mpsc::channel() ;
+
         LoggerState{  options: BROWSE_BONJOUR | USE_SSL,
                       ready_waiters: vec![],
                       bonjour_service_type: None,
@@ -105,6 +112,9 @@ impl LoggerState
                       message_sender: message_sender,
                       message_receiver: Some(message_receiver),
                       log_file_path: None,
+
+                      action_sender: action_sender,
+                      action_receiver: Some(action_receiver),
         }
     }
 
@@ -114,6 +124,19 @@ impl LoggerState
                 info!(target:"NSLogger", "process_log_queue empty") ;
             }
             return ;
+        }
+
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "process_log_queue") ;
+        }
+
+        if self.action_receiver.is_some() {
+            let action_receiver = self.action_receiver.take().unwrap() ;
+            let message_sender = self.message_sender.clone() ;
+
+            thread::spawn( move || {
+                network_manager::NetworkManager::new(action_receiver, message_sender).run() ;
+            }) ;
         }
 
         if !self.is_client_info_added
@@ -298,64 +321,8 @@ impl LoggerState
             } ;
 
             self.bonjour_service_type = Some(service_type.to_string()) ;
-            let mut core = Core::new().unwrap() ;
-            let handle = core.handle() ;
 
-            let listener = async_dnssd::browse(Interface::Any, service_type, None, &handle)? ;
-
-            let timeout = Timeout::new(Duration::from_secs(5), &handle).unwrap() ;
-            match core.run(listener.into_future().select2(timeout)) {
-                Ok( either ) => {
-                    match either {
-                       Either::A(( ( result, _ ), _ )) => {
-                           let browse_result = result.unwrap() ;
-                           if DEBUG_LOGGER {
-                                info!(target:"NSLogger", "Browse result: {:?}", browse_result) ;
-                                info!(target:"NSLogger", "Service name: {}", browse_result.service_name) ;
-                           }
-                            self.bonjour_service_name = Some(browse_result.service_name.to_string()) ;
-                            match core.run(browse_result.resolve(&handle).unwrap().into_future()) {
-                                Ok( (resolve_result, _) ) => {
-                                    let resolve_details = resolve_result.unwrap() ;
-                                    if DEBUG_LOGGER {
-                                        info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details) ;
-                                    }
-                                    for host_addr in format!("{}:{}", resolve_details.host_target, resolve_details.port).to_socket_addrs().unwrap() {
-
-
-                                        if !host_addr.ip().is_global() && host_addr.ip().is_ipv4() {
-                                            let ip_address = format!("{}", host_addr.ip()) ;
-                                            if DEBUG_LOGGER {
-                                                info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
-                                            }
-                                            self.remote_host = Some(ip_address) ;
-                                            self.remote_port = Some(resolve_details.port) ;
-                                            break ;
-                                        }
-
-                                    }
-
-                                    self.message_sender.send(HandlerMessageType::TryConnect) ;
-                                },
-                                Err(_) => {
-                                    if DEBUG_LOGGER {
-                                        warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
-                                    }
-                                }
-                            } ;
-                        },
-                        Either::B( ( _, _ ) ) => {
-                            if DEBUG_LOGGER {
-                                warn!(target:"NSLogger", "Bonjour discovery timed out")
-                            }
-                        }
-                    }
-                },
-                Err(_) => if DEBUG_LOGGER {
-                    warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
-                }
-
-            } ;
+            self.action_sender.send(network_manager::NetworkActionMessage::SetupBonjour(service_type.to_string())) ;
         }
 
         Ok( () )
@@ -363,7 +330,7 @@ impl LoggerState
 
 
     pub fn close_bonjour(&mut self) {
-        // FIXME FILL THAT
+        // Nothing to do
     }
 
     pub fn connect_to_remote(&mut self) -> Result<(), &str> {
@@ -450,7 +417,8 @@ impl LoggerState
         }
         else {
             self.is_reconnection_scheduled = true ;
-            // FIXME Should send with 2s delay
+            // FIXME Should send with 2s delay. Should probably go through the networking thread
+            // for handling the reconnect
             self.message_sender.send(HandlerMessageType::TryConnect) ;
         }
     }

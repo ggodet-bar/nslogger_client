@@ -72,6 +72,19 @@ impl MessageHandler {
                             local_shared_state.process_log_queue() ;
                         },
                         HandlerMessageType::TryConnect => self.try_connect(),
+                        HandlerMessageType::TryConnectBonjour(service_name, host, port) => {
+                            if DEBUG_LOGGER {
+                                info!(target:"NSLogger", "connecting with Bonjour setup service={}, host={}, port={}", service_name, host, port) ;
+                            }
+
+                            let mut local_shared_state = self.shared_state.lock().unwrap() ;
+
+                            local_shared_state.bonjour_service_name = Some(service_name) ;
+                            local_shared_state.remote_host = Some(host) ;
+                            local_shared_state.remote_port = Some(port) ;
+
+                            local_shared_state.connect_to_remote() ;
+                        },
 
                         HandlerMessageType::Quit => {
                             break ;
