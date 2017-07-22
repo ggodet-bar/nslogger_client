@@ -10,7 +10,7 @@ use std::path::PathBuf ;
 
 use log ;
 
-static DEBUG_LOGGER:bool = true ;
+const DEBUG_LOGGER:bool = false & cfg!(test) ;
 
 #[cfg(test)]
 use env_logger ;
@@ -100,6 +100,7 @@ impl Logger {
             let mut local_shared_state = self.shared_state.lock().unwrap() ;
             local_shared_state.bonjour_service_name = service_name.and_then( |v| Some(v.to_string()) ) ;
             local_shared_state.bonjour_service_type = service_type.and_then( |v| Some(v.to_string()) ) ;
+            local_shared_state.options |= BROWSE_BONJOUR ;
 
             if use_ssl {
                 local_shared_state.options = local_shared_state.options | USE_SSL ;

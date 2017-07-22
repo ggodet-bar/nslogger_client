@@ -84,8 +84,8 @@ pub struct LoggerState
 
     pub log_file_path:Option<PathBuf>,
 
-    pub action_sender:mpsc::Sender<network_manager::NetworkActionMessage>,
-    pub action_receiver:Option<mpsc::Receiver<network_manager::NetworkActionMessage>>,
+    action_sender:mpsc::Sender<network_manager::NetworkActionMessage>,
+    action_receiver:Option<mpsc::Receiver<network_manager::NetworkActionMessage>>,
 }
 
 impl LoggerState
@@ -303,7 +303,6 @@ impl LoggerState
                 }
             }
         } ;
-        self.connect_to_remote() ;
     }
 
     pub fn setup_bonjour(&mut self) -> io::Result<()> {
@@ -341,12 +340,13 @@ impl LoggerState
 
         self.close_bonjour() ;
 
-        let remote_host = self.remote_host.as_ref().unwrap() ;
+        let remote_host = self.remote_host.as_ref().expect("remote host was none") ;
+        let remote_port = self.remote_port.expect("remote port was none") ;
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "connecting to {}:{}", remote_host, self.remote_port.unwrap()) ;
+            info!(target:"NSLogger", "connecting to {}:{}", remote_host, remote_port) ;
         }
 
-        let connect_string = format!("{}:{}", remote_host, self.remote_port.unwrap()) ;
+        let connect_string = format!("{}:{}", remote_host, remote_port) ;
         let stream = match TcpStream::connect(connect_string) {
             Ok(s) => s,
             Err(_) => return Err("error occurred during tcp stream connection")
@@ -382,22 +382,27 @@ impl LoggerState
         Ok( () )
     }
 
-    fn disconnect_from_remote(&mut self) {
+    pub fn disconnect_from_remote(&mut self) {
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "disconnect_from_remote()") ;
+        }
+
         self.is_connected = false ;
+        self.is_connecting = false ;
+        self.is_client_info_added = false ;
+
+        if !(self.options & BROWSE_BONJOUR).is_empty() {
+            // Otherwise we'll always try to connect to the same host & port, which might change
+            // from one connection to the next.
+            self.remote_host = None ;
+            self.remote_port = None ;
+        }
 
         if self.write_stream.is_none() {
             return ;
         }
 
-
-        if DEBUG_LOGGER {
-            info!(target:"NSLogger", "disconnect_from_remote()") ;
-        }
-
         self.write_stream.take() ;
-
-        self.is_connecting = false ;
-        self.is_client_info_added = false ;
     }
 
     fn try_reconnecting(&mut self) {
@@ -410,11 +415,7 @@ impl LoggerState
         }
 
         if !(self.options & BROWSE_BONJOUR).is_empty() {
-            // TODO: Bonjour
-				/*
-				if (bonjourBrowser == null)
-					setupBonjour();
-					*/
+            self.setup_bonjour() ;
         }
         else {
             self.is_reconnection_scheduled = true ;
@@ -448,9 +449,11 @@ impl LoggerState
             info!(target:"NSLogger", "Closing buffer stream") ;
         }
 
-        let mut file_stream = self.write_stream.take().unwrap() ;
+        match self.write_stream.take() {
+            Some(mut stream) => stream.flush().unwrap(),
+            None => ()
 
-        file_stream.flush() ;
+        } ;
         // Letting the file go out of scope will close it
 
         self.is_client_info_added = false ;
@@ -526,5 +529,15 @@ impl LoggerState
         }
 
         Ok( () )
+    }
+}
+
+impl Drop for LoggerState {
+    fn drop(&mut self) {
+        if DEBUG_LOGGER {
+            info!(target:"NSLogger", "calling drop for logger state") ;
+        }
+        self.disconnect_from_remote() ;
+        self.action_sender.send(network_manager::NetworkActionMessage::Quit) ;
     }
 }

@@ -71,7 +71,9 @@ pub use nslogger::Logger ;
 pub fn init() -> Result<(), log::SetLoggerError> {
     log::set_logger(|max_log_level| {
         max_log_level.set(log::LogLevelFilter::Info) ;
-        Box::new(Logger::new())
+        let mut logger = Logger::new() ;
+        //logger.set_message_flushing(true) ;
+        Box::new(logger)
     })
 }
 

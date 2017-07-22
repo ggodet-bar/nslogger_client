@@ -19,76 +19,63 @@ impl MessageHandler {
 
     pub fn run_loop(&self) {
         self.shared_state.lock().unwrap().is_handler_running = true  ;
-        loop {
+        for message in &self.channel_receiver {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "[{:?}] Handler waiting for message", thread::current().id()) ;
+                info!(target:"NSLogger", "[{:?}] Received message", thread::current().id()) ;
             }
-            match self.channel_receiver.recv() {
-                Ok(message) => {
+
+            match message {
+                HandlerMessageType::AddLog(message) => {
                     if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "[{:?}] Received message", thread::current().id()) ;
+                        info!(target:"NSLogger", "adding log {} to the queue", message.sequence_number) ;
                     }
 
-                    match message {
-                        HandlerMessageType::AddLog(message) => {
-                            if DEBUG_LOGGER {
-                                info!(target:"NSLogger", "adding log {} to the queue", message.sequence_number) ;
-                            }
-
-                            let mut local_shared_state = self.shared_state.lock().unwrap() ;
-                            local_shared_state.log_messages.push(message) ;
-                            //if local_shared_state.is_connected {
-                                local_shared_state.process_log_queue() ;
-                            //}
-                        },
-                        HandlerMessageType::OptionChange(new_options) => {
-                            if DEBUG_LOGGER {
-                                info!(target:"NSLogger", "options change received") ;
-                            }
-
-                            self.shared_state.lock().unwrap().change_options(new_options) ;
-                        },
-                        HandlerMessageType::ConnectComplete => {
-                            if DEBUG_LOGGER {
-                                info!(target:"NSLogger", "connect complete message received") ;
-                            }
-
-                            let mut local_shared_state = self.shared_state.lock().unwrap() ;
-
-                            local_shared_state.is_connecting = false ;
-                            local_shared_state.is_connected = true ;
-
-                            local_shared_state.process_log_queue() ;
-                        },
-                        HandlerMessageType::TryConnect => self.try_connect(),
-                        HandlerMessageType::TryConnectBonjour(service_name, host, port) => {
-                            if DEBUG_LOGGER {
-                                info!(target:"NSLogger", "connecting with Bonjour setup service={}, host={}, port={}", service_name, host, port) ;
-                            }
-
-                            let mut local_shared_state = self.shared_state.lock().unwrap() ;
-
-                            local_shared_state.bonjour_service_name = Some(service_name) ;
-                            local_shared_state.remote_host = Some(host) ;
-                            local_shared_state.remote_port = Some(port) ;
-
-                            local_shared_state.connect_to_remote() ;
-                        },
-
-                        HandlerMessageType::Quit => {
-                            break ;
-                        }
-                        _ => ()
-                    }
+                    let mut local_shared_state = self.shared_state.lock().unwrap() ;
+                    local_shared_state.log_messages.push(message) ;
+                    //if local_shared_state.is_connected {
+                        local_shared_state.process_log_queue() ;
+                    //}
                 },
-                Err(e) =>{
+                HandlerMessageType::OptionChange(new_options) => {
                     if DEBUG_LOGGER {
-                        warn!(target:"NSLogger", "Error received: {:?}", e) ;
+                        info!(target:"NSLogger", "options change received") ;
                     }
+
+                    self.shared_state.lock().unwrap().change_options(new_options) ;
+                },
+                HandlerMessageType::ConnectComplete => {
+                    if DEBUG_LOGGER {
+                        info!(target:"NSLogger", "connect complete message received") ;
+                    }
+
+                    let mut local_shared_state = self.shared_state.lock().unwrap() ;
+
+                    local_shared_state.is_connecting = false ;
+                    local_shared_state.is_connected = true ;
+
+                    local_shared_state.process_log_queue() ;
+                },
+                HandlerMessageType::TryConnect => self.try_connect(),
+                HandlerMessageType::TryConnectBonjour(service_name, host, port) => {
+                    if DEBUG_LOGGER {
+                        info!(target:"NSLogger", "connecting with Bonjour setup service={}, host={}, port={}", service_name, host, port) ;
+                    }
+
+                    let mut local_shared_state = self.shared_state.lock().unwrap() ;
+
+                    local_shared_state.bonjour_service_name = Some(service_name) ;
+                    local_shared_state.remote_host = Some(host) ;
+                    local_shared_state.remote_port = Some(port) ;
+
+                    local_shared_state.connect_to_remote() ;
+                },
+
+                HandlerMessageType::Quit => {
                     break ;
                 }
+                _ => ()
             }
-        } ;
+        }
 
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "leaving message handler loop") ;

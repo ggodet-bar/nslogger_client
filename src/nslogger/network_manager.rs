@@ -17,6 +17,7 @@ pub trait BonjourService {
 
 pub enum NetworkActionMessage {
     SetupBonjour(String),
+    Quit
 }
 
 enum BonjourServiceStatus {
@@ -48,49 +49,44 @@ impl <T:BonjourService> NetworkManager<T> {
             info!(target:"NSLogger", "starting network manager") ;
         }
 
-        loop {
-            match self.action_receiver.recv() {
-                Ok(message) => {
-                    if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "network manager received message") ;
-                    }
+        for message in &self.action_receiver {
+            if DEBUG_LOGGER {
+                info!(target:"NSLogger", "network manager received message") ;
+            }
 
-                    match message {
-                        NetworkActionMessage::SetupBonjour(service_name) => {
-                            let mut is_connected = false ;
-                            let mut current_delay:Option<u64> = None ;
-                            while !is_connected {
-                                match self.bonjour_service.setup_bonjour::<T>(&service_name, current_delay) {
-                                    Ok(BonjourServiceStatus::ServiceFound(bonjour_service_name, host, port)) => {
-                                        self.message_sender.send(HandlerMessageType::TryConnectBonjour(bonjour_service_name, host, port)) ;
-                                        is_connected = true ;
-                                    }
-                                    Ok(_) => {
-                                        if DEBUG_LOGGER {
-                                            info!(target:"NSLogger", "couldn't resolve Bonjour. Will retry in a few seconds") ;
-                                        }
-
-                                        current_delay = Some(10000) ;
-                                    },
-                                    Err(e) => {
-
-                                    }
-                                }
+            match message {
+                NetworkActionMessage::SetupBonjour(service_name) => {
+                    let mut is_connected = false ;
+                    let mut current_delay:Option<u64> = None ;
+                    while !is_connected {
+                        match self.bonjour_service.setup_bonjour::<T>(&service_name, current_delay) {
+                            Ok(BonjourServiceStatus::ServiceFound(bonjour_service_name, host, port)) => {
+                                self.message_sender.send(HandlerMessageType::TryConnectBonjour(bonjour_service_name, host, port)) ;
+                                is_connected = true ;
                             }
-                        },
-                        _ => ()
-                    }
+                            Ok(_) => {
+                                if DEBUG_LOGGER {
+                                    info!(target:"NSLogger", "couldn't resolve Bonjour. Will retry in a few seconds") ;
+                                }
 
+                                current_delay = Some(10000) ;
+                            },
+                            Err(e) => {
+
+                            }
+                        }
+                    }
                 },
-                Err(e) => {
+                NetworkActionMessage::Quit => {
                     if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "network manager error: {:?}", e) ;
+                        info!(target:"NSLogger", "properly exiting the network manager") ;
                     }
 
                     break ;
-                }
-
+                },
+                _ => ()
             }
+
         }
 
         if DEBUG_LOGGER {
