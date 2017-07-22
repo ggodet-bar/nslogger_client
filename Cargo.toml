@@ -20,6 +20,7 @@ chrono = "0.4"
 log = "0.3"
 cfg-if = "0.1"
 sys-info = "0.4"
+integer-atomics = "1.0"
 
 [dev-dependencies]
 env_logger = "*"

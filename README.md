@@ -1,6 +1,7 @@
 # A client for NSLogger.
 
 [![Build Status](https://travis-ci.org/ggodet-bar/NSLoggerClient.svg?branch=master)](https://travis-ci.org/ggodet-bar/NSLoggerClient)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 The `Logger` is essentially a port of the [Java
 implementation](https://github.com/fpillet/NSLogger/blob/master/Client/Android/client-code/src/com/NSLogger/NSLoggerClient.java),

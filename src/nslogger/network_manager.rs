@@ -141,7 +141,7 @@ impl BonjourService for DefaultBonjourService {
                                 for host_addr in format!("{}:{}", resolve_details.host_target, resolve_details.port).to_socket_addrs().unwrap() {
 
 
-                                    if !host_addr.ip().is_global() && host_addr.ip().is_ipv4() {
+                                    if host_addr.ip().is_ipv4() {
                                         let ip_address = format!("{}", host_addr.ip()) ;
                                         if DEBUG_LOGGER {
                                             info!(target:"NSLogger", "Bonjour host details {:?}", host_addr) ;
