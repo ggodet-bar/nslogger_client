@@ -44,14 +44,19 @@ impl MessageWorker {
         }
         else if !(self.shared_state.lock().unwrap().options & BROWSE_BONJOUR).is_empty() {
             self.shared_state.lock().unwrap().setup_bonjour() ;
+            // Simply triggers an async bonjour service search. The service probably won't be ready
+            // when returning from setup_bonjour().
         }
 
 
         // We are ready to run. Unpark the waiting threads now
         // (there may be multiple thread trying to start logging at the same time)
-        self.shared_state.lock().unwrap().ready = true ;
-        while !self.shared_state.lock().unwrap().ready_waiters.is_empty() {
-            self.shared_state.lock().unwrap().ready_waiters.pop().unwrap().unpark() ;
+        {
+            let mut local_shared_state = self.shared_state.lock().unwrap() ;
+            (*local_shared_state).ready = true ;
+            while !local_shared_state.ready_waiters.is_empty() {
+                local_shared_state.ready_waiters.pop().unwrap().unpark() ;
+            }
         }
 
         if DEBUG_LOGGER {

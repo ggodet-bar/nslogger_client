@@ -25,6 +25,40 @@ fn logs_messages_with_targets() {
     info!(target:"Custom", "Should create custom domain") ;
 }
 
+#[test]
+fn logs_messages_starting_from_different_threads() {
+    use std::thread::spawn ;
+    use std::sync::{Arc, Barrier} ;
+
+    initialize_logger() ;
+
+    let thread_count = 100 ;
+
+    let mut handles = Vec::with_capacity(thread_count) ;
+    let barrier = Arc::new(Barrier::new(thread_count)) ;
+    for i in 0..thread_count {
+        let c = barrier.clone() ;
+        handles.push(spawn( move || {
+            c.wait() ;
+            // last call to wait will release all threads
+
+            warn!("Warn message 1 from thread-{}", i) ;
+            warn!("Warn message 2 from thread-{}", i) ;
+            warn!("Warn message 3 from thread-{}", i) ;
+        })) ;
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    use std::{thread, time};
+
+    let ten_millis = time::Duration::from_secs(2);
+    thread::sleep(ten_millis);
+}
+
+
 fn initialize_logger() {
     START.call_once(|| { nslogger::init().unwrap() ; }) ;
 }

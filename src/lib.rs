@@ -10,10 +10,11 @@
 //! - networking code (setup_bonjour etc.) should probably be run on its own thread, which would
 //!   provide simple conditions for writing delayed dispatches and reconnects
 //!
-//! - log in-memory if there's no network stream to connect to
 //! - opt-out of the networking features (esp. openssl)
 //! - builder pattern for logger initialization
 //! - possibly some optimizations.
+
+#![feature(thread_id)]
 
 #[macro_use]
 extern crate bitflags ;

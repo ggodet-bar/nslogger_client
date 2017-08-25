@@ -13,3 +13,4 @@ image logging features). Tested on version 1.8.2 of the MacOS NSLogger server.
 - opt-out of the networking features (esp. openssl)
 - builder pattern for logger initialization
 - possibly some optimizations.
+- Typical integration test issue: when we're not waiting for message flushes, the test completes before the bonjour search had sufficient time to complete, therefore all the messages that should have been logged are lost. In this case, the logger should fetch the buffer file's content.

@@ -98,14 +98,14 @@ impl Logger {
         else {
             // Worker thread isn't yet setup
             let mut local_shared_state = self.shared_state.lock().unwrap() ;
-            local_shared_state.bonjour_service_name = service_name.and_then( |v| Some(v.to_string()) ) ;
-            local_shared_state.bonjour_service_type = service_type.and_then( |v| Some(v.to_string()) ) ;
-            local_shared_state.options |= BROWSE_BONJOUR ;
+            (*local_shared_state).bonjour_service_name = service_name.and_then( |v| Some(v.to_string()) ) ;
+            (*local_shared_state).bonjour_service_type = service_type.and_then( |v| Some(v.to_string()) ) ;
+            (*local_shared_state).options |= BROWSE_BONJOUR ;
 
             if use_ssl {
-                local_shared_state.options = local_shared_state.options | USE_SSL ;
+                (*local_shared_state).options = local_shared_state.options | USE_SSL ;
             } else {
-                local_shared_state.options = local_shared_state.options - USE_SSL ;
+                (*local_shared_state).options = local_shared_state.options - USE_SSL ;
             }
         }
     }
@@ -127,13 +127,13 @@ impl Logger {
         else {
             // Worker thread isn't yet setup
             let mut local_shared_state = self.shared_state.lock().unwrap() ;
-            local_shared_state.remote_host = Some(String::from(host_name)) ;
-            local_shared_state.remote_port = Some(host_port) ;
+            (*local_shared_state).remote_host = Some(String::from(host_name)) ;
+            (*local_shared_state).remote_port = Some(host_port) ;
 
             if use_ssl {
-                local_shared_state.options = local_shared_state.options | USE_SSL ;
+                (*local_shared_state).options = local_shared_state.options | USE_SSL ;
             } else {
-                local_shared_state.options = local_shared_state.options - USE_SSL ;
+                (*local_shared_state).options = local_shared_state.options - USE_SSL ;
             }
         }
     }
@@ -314,22 +314,19 @@ impl Logger {
 
         {
             let mut local_shared_state = self.shared_state.lock().unwrap() ;
-            match local_shared_state.message_receiver {
-                Some(_) => {
-                    local_shared_state.ready_waiters.push(thread::current()) ;
-                    let cloned_state = self.shared_state.clone() ;
+            if local_shared_state.message_receiver.is_some() {
+                local_shared_state.ready_waiters.push(thread::current()) ;
+                waiting = true ;
 
-                    let receiver = local_shared_state.message_receiver.take().unwrap() ;
-                    let sender = self.message_sender.clone() ;
-                    spawn( move || {
-                        MessageWorker::new(cloned_state, sender, receiver).run() ;
-                    }) ;
-                    waiting = true ;
+                let cloned_state = Arc::clone(&self.shared_state) ;
+                // NOTE: only clones the pointer reference, not the state itself
 
-                },
-                _ => ()
-
-            } ;
+                let receiver = local_shared_state.message_receiver.take().unwrap() ;
+                let sender = self.message_sender.clone() ;
+                spawn( move || {
+                    MessageWorker::new(cloned_state, sender, receiver).run() ;
+                }) ;
+            }
         }
 
 
@@ -337,17 +334,32 @@ impl Logger {
             info!(target:"NSLogger", "Waiting for worker to be ready") ;
         }
 
+        // FIXME There seems to be cases where the system deadlocks here unless we forcibly make
+        // one of the blocked threads do a few execution steps.
+        // More specifically, the message worker is already running the message handler loop
+        // (therefore it should already have dealt with the ready state...) while the logging
+        // threads are waiting for the worker's ack.
+        // NOTE: Replacing park_timeout with park seems to solve the problem. For some reason,
+        // there seems to be some kind of locking (or deadlock, rather) going on while the parked thread tries to figure
+        // out the unix time since for unparking. Double parking of the thread via ONCE.init??
+        // NOTE: Is it possible to deadlock because the 'main' worker thread is in the message
+        // handler loop and another thread tries to access the shared state?
         while !self.shared_state.lock().unwrap().ready {
             if !waiting {
                 self.shared_state.lock().unwrap().ready_waiters.push(thread::current()) ;
                 waiting = true ;
             }
 
+            println!("Parking thread") ;
+
             thread::park_timeout(Duration::from_millis(100)) ;
             //if (Thread.interrupted())
             //   Thread.currentThread().interrupt();
 
+            println!("Thread left park") ;
         }
+
+        println!("Passed the ready condition") ;
 
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "Worker is ready and running") ;

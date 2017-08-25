@@ -18,7 +18,7 @@ impl MessageHandler {
     }
 
     pub fn run_loop(&self) {
-        self.shared_state.lock().unwrap().is_handler_running = true  ;
+        (*self.shared_state.lock().unwrap()).is_handler_running = true  ;
         for message in &self.channel_receiver {
             if DEBUG_LOGGER {
                 info!(target:"NSLogger", "[{:?}] Received message", thread::current().id()) ;
@@ -50,8 +50,8 @@ impl MessageHandler {
 
                     let mut local_shared_state = self.shared_state.lock().unwrap() ;
 
-                    local_shared_state.is_connecting = false ;
-                    local_shared_state.is_connected = true ;
+                    (*local_shared_state).is_connecting = false ;
+                    (*local_shared_state).is_connected = true ;
 
                     local_shared_state.process_log_queue() ;
                 },
@@ -63,9 +63,9 @@ impl MessageHandler {
 
                     let mut local_shared_state = self.shared_state.lock().unwrap() ;
 
-                    local_shared_state.bonjour_service_name = Some(service_name) ;
-                    local_shared_state.remote_host = Some(host) ;
-                    local_shared_state.remote_port = Some(port) ;
+                    (*local_shared_state).bonjour_service_name = Some(service_name) ;
+                    (*local_shared_state).remote_host = Some(host) ;
+                    (*local_shared_state).remote_port = Some(port) ;
 
                     local_shared_state.connect_to_remote() ;
                 },
@@ -91,7 +91,7 @@ impl MessageHandler {
                   local_shared_state.is_connecting) ;
         }
 
-        local_shared_state.is_reconnection_scheduled = false ;
+        (*local_shared_state).is_reconnection_scheduled = false ;
 
         if local_shared_state.write_stream.is_none() {
             if !local_shared_state.is_connecting
