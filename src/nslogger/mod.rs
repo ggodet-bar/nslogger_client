@@ -334,32 +334,14 @@ impl Logger {
             info!(target:"NSLogger", "Waiting for worker to be ready") ;
         }
 
-        // FIXME There seems to be cases where the system deadlocks here unless we forcibly make
-        // one of the blocked threads do a few execution steps.
-        // More specifically, the message worker is already running the message handler loop
-        // (therefore it should already have dealt with the ready state...) while the logging
-        // threads are waiting for the worker's ack.
-        // NOTE: Replacing park_timeout with park seems to solve the problem. For some reason,
-        // there seems to be some kind of locking (or deadlock, rather) going on while the parked thread tries to figure
-        // out the unix time since for unparking. Double parking of the thread via ONCE.init??
-        // NOTE: Is it possible to deadlock because the 'main' worker thread is in the message
-        // handler loop and another thread tries to access the shared state?
         while !self.shared_state.lock().unwrap().ready {
             if !waiting {
                 self.shared_state.lock().unwrap().ready_waiters.push(thread::current()) ;
                 waiting = true ;
             }
 
-            println!("Parking thread") ;
-
             thread::park_timeout(Duration::from_millis(100)) ;
-            //if (Thread.interrupted())
-            //   Thread.currentThread().interrupt();
-
-            println!("Thread left park") ;
         }
-
-        println!("Passed the ready condition") ;
 
         if DEBUG_LOGGER {
             info!(target:"NSLogger", "Worker is ready and running") ;
