@@ -1,7 +1,7 @@
 use std::thread::spawn ;
 use std::thread ;
 use std::sync::mpsc ;
-use std::sync::{Arc, Mutex} ;
+use std::sync::{Arc, Mutex, Condvar} ;
 use std::time::Duration ;
 use std::path::Path ;
 use std::collections::HashMap ;
@@ -47,6 +47,7 @@ bitflags! {
 
 pub struct Logger {
     shared_state: Arc<Mutex<LoggerState>>,
+    ready_cvar: Arc<Condvar>,
     message_sender:mpsc::Sender<HandlerMessageType>,
 }
 
@@ -76,6 +77,7 @@ impl Logger {
 
         return Logger{ message_sender: message_sender,
                        shared_state: Arc::new(Mutex::new(LoggerState::new(sender_clone, message_receiver))),
+                       ready_cvar: Arc::new(Condvar::new()),
                       } ;
     }
 
@@ -319,12 +321,13 @@ impl Logger {
                 waiting = true ;
 
                 let cloned_state = Arc::clone(&self.shared_state) ;
+                let cloned_cvar = Arc::clone(&self.ready_cvar) ;
                 // NOTE: only clones the pointer reference, not the state itself
 
                 let receiver = local_shared_state.message_receiver.take().unwrap() ;
                 let sender = self.message_sender.clone() ;
                 spawn( move || {
-                    MessageWorker::new(cloned_state, sender, receiver).run() ;
+                    MessageWorker::new(cloned_state, cloned_cvar, sender, receiver).run() ;
                 }) ;
             }
         }
@@ -335,12 +338,10 @@ impl Logger {
         }
 
         while !self.shared_state.lock().unwrap().ready {
-            if !waiting {
-                self.shared_state.lock().unwrap().ready_waiters.push(thread::current()) ;
-                waiting = true ;
-            }
+            self.ready_cvar.wait_timeout(self.shared_state.lock().unwrap(), Duration::from_millis(100)) ;
 
-            thread::park_timeout(Duration::from_millis(100)) ;
+            // We'll keep this loop around in case we find situations where we would need to
+            // interrupt the thread.
         }
 
         if DEBUG_LOGGER {

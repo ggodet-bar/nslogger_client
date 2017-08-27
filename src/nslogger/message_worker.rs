@@ -1,5 +1,5 @@
 use std::sync::mpsc ;
-use std::sync::{Arc,Mutex} ;
+use std::sync::{Arc,Mutex,Condvar} ;
 
 
 use nslogger::logger_state::{ HandlerMessageType, LoggerState } ;
@@ -13,14 +13,16 @@ pub struct MessageWorker
     pub shared_state:Arc<Mutex<LoggerState>>,
     pub message_sender:mpsc::Sender<HandlerMessageType>,
     handler:MessageHandler,
+    ready_cvar:Arc<Condvar>,
 }
 
 
 impl MessageWorker {
 
-    pub fn new(logger_state:Arc<Mutex<LoggerState>>, message_sender:mpsc::Sender<HandlerMessageType>, handler_receiver:mpsc::Receiver<HandlerMessageType>) -> MessageWorker {
+    pub fn new(logger_state:Arc<Mutex<LoggerState>>, ready_cvar:Arc<Condvar>, message_sender:mpsc::Sender<HandlerMessageType>, handler_receiver:mpsc::Receiver<HandlerMessageType>) -> MessageWorker {
         let state_clone = logger_state.clone() ;
         MessageWorker{ shared_state: logger_state,
+                       ready_cvar: ready_cvar,
                        message_sender: message_sender,
                        handler: MessageHandler::new(handler_receiver, state_clone) }
     }
@@ -54,9 +56,7 @@ impl MessageWorker {
         {
             let mut local_shared_state = self.shared_state.lock().unwrap() ;
             (*local_shared_state).ready = true ;
-            while !local_shared_state.ready_waiters.is_empty() {
-                local_shared_state.ready_waiters.pop().unwrap().unpark() ;
-            }
+            self.ready_cvar.notify_all() ;
         }
 
         if DEBUG_LOGGER {
