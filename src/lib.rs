@@ -14,8 +14,6 @@
 //! - builder pattern for logger initialization
 //! - possibly some optimizations.
 
-#![feature(thread_id)]
-
 #[macro_use]
 extern crate bitflags ;
 
