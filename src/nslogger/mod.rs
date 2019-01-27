@@ -60,7 +60,7 @@ impl Logger {
                     fn init_test_logger() {
                         START.call_once(|| {
 
-                            env_logger::init().unwrap() ;
+                            env_logger::init() ;
                         }) ;
                         info!(target:"NSLogger", "NSLogger client started") ;
                     }
@@ -406,5 +406,3 @@ impl log::Log for Logger {
 unsafe impl Sync for Logger {}
 
 unsafe impl Send for Logger {}
-
-

@@ -12,7 +12,7 @@ use std::io::BufWriter ;
 use std::path::PathBuf ;
 
 use openssl ;
-use openssl::ssl::{SslMethod, SslConnectorBuilder, SslStream} ;
+use openssl::ssl::{SslMethod, SslConnector, SslStream} ;
 
 use nslogger::log_message::{LogMessage, LogMessageType, MessagePartKey} ;
 use nslogger::network_manager ;
@@ -204,7 +204,7 @@ impl LoggerState
 
         match sys_info::os_type() {
             Ok(name) => {
-                message.add_string(MessagePartKey::OsName, &name) ;
+
 
                 match sys_info::os_release() {
                     Ok(release) => message.add_string(MessagePartKey::OsVersion, &release),
@@ -362,14 +362,14 @@ impl LoggerState
                 info!(target:"NSLogger", "activating SSL connection") ;
             }
 
-            let mut ssl_connector_builder = SslConnectorBuilder::new(SslMethod::tls()).unwrap() ;
+            let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls()).unwrap() ;
 
-            ssl_connector_builder.builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE) ;
-            ssl_connector_builder.builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_NONE, |_,_| { true }) ;
+            ssl_connector_builder.set_verify(openssl::ssl::SslVerifyMode::NONE) ;
+            ssl_connector_builder.set_verify_callback(openssl::ssl::SslVerifyMode::NONE, |_,_| { true }) ;
 
             let connector = ssl_connector_builder.build() ;
             if let WriteStreamWrapper::Tcp(inner_stream) = self.write_stream.take().unwrap() {
-                let stream = connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(inner_stream).unwrap();
+                let stream = connector.connect("foo", inner_stream).unwrap();
                 self.write_stream = Some(WriteStreamWrapper::Ssl(stream)) ;
                 if DEBUG_LOGGER {
                     info!(target:"NSLogger", "opened SSL stream") ;

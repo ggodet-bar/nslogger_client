@@ -1,6 +1,6 @@
 [package]
 name = "nslogger_client"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Guillaume Godet-Bar <guillaume.godetbar@gmail.com>"]
 
 [lib]
@@ -14,12 +14,12 @@ futures = "0.1"
 tokio-core = "0.1"
 mio  = "0.6"
 bitflags = "0.9"
-openssl = "0.9"
+openssl = "0.10"
 byteorder = "1.0"
 chrono = "0.4"
 log = "0.3"
 cfg-if = "0.1"
-sys-info = "0.4"
+sys-info = "0.5"
 integer-atomics = "1.0"
 
 [dev-dependencies]
