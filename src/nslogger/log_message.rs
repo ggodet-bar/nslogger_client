@@ -1,13 +1,6 @@
-use std::sync::mpsc;
-use std::thread;
-
-use std::fmt;
-use std::path::Path;
-use std::str::FromStr;
-use std::time;
+use std::{fmt, path::Path, str::FromStr, sync::mpsc, thread, time};
 
 use byteorder::{NetworkEndian, WriteBytesExt};
-
 use log;
 
 #[derive(Debug, PartialEq)]
@@ -83,17 +76,21 @@ impl Level {
 pub enum MessagePartKey {
     MessageType = 0,
     TimestampS = 1,  // "seconds" component of timestamp
-    TimestampMs = 2, // milliseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_US)
-    TimestampUs = 3, // microseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_MS)
+    TimestampMs = 2, /* milliseconds component of timestamp (optional, mutually exclusive with
+                      * TIMESTAMP_US) */
+    TimestampUs = 3, /* microseconds component of timestamp (optional, mutually exclusive with
+                      * TIMESTAMP_MS) */
     ThreadId = 4,
     Tag = 5,
     Level = 6,
     Message = 7,
     ImageWidth = 8, // messages containing an image should also contain a part with the image size
-    ImageHeight = 9, // (this is mainly for the desktop viewer to compute the cell size without having to immediately decode the image)
-    MessageSeq = 10, // the sequential number of this message which indicates the order in which messages are generated
-    FileName = 11,   // when logging, message can contain a file name
-    LineNumber = 12, // as well as a line number
+    ImageHeight = 9, /* (this is mainly for the desktop viewer to compute the cell size without
+                     * having to immediately decode the image) */
+    MessageSeq = 10, /* the sequential number of this message which indicates the order in
+                      * which messages are generated */
+    FileName = 11,     // when logging, message can contain a file name
+    LineNumber = 12,   // as well as a line number
     FunctionName = 13, // and a function or method name
 
     // Client info

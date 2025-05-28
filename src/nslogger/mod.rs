@@ -1,21 +1,22 @@
-use std::collections::HashMap;
-use std::path::Path;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::mpsc;
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
-use std::thread::spawn;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::{Arc, Condvar, Mutex, mpsc},
+    thread,
+    thread::spawn,
+    time::Duration,
+};
 
 use log;
 
 const DEBUG_LOGGER: bool = false & cfg!(test);
 
 #[cfg(test)]
-use env_logger;
-#[cfg(test)]
 use std::sync::Once;
+
+#[cfg(test)]
+use env_logger;
 
 #[cfg(test)]
 static START: Once = Once::new();
@@ -28,10 +29,11 @@ mod network_manager;
 
 // Exports Level & Domain as part of the public interface
 pub use self::log_message::{Domain, Level};
-
-use self::log_message::{LogMessage, LogMessageType, MessagePartKey};
-use self::logger_state::{HandlerMessageType, LoggerState};
-use self::message_worker::MessageWorker;
+use self::{
+    log_message::{LogMessage, LogMessageType, MessagePartKey},
+    logger_state::{HandlerMessageType, LoggerState},
+    message_worker::MessageWorker,
+};
 
 bitflags! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -236,7 +238,6 @@ impl Logger {
     /// optional, if null or empty it will be replaced with the current date / time
     ///
     /// * `message`	optional message
-    ///
     pub fn log_mark(&self, message: Option<&str>) {
         use chrono;
         if DEBUG_LOGGER {

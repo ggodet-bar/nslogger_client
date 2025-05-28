@@ -1,15 +1,10 @@
-use async_dnssd;
-use async_dnssd::Interface;
-use futures::future::Either;
-use futures::{Future, Stream};
-use std::io;
-use std::net::ToSocketAddrs;
-use std::sync::mpsc;
-use std::time::Duration;
+use std::{io, net::ToSocketAddrs, sync::mpsc, time::Duration};
+
+use async_dnssd::{self, Interface};
+use futures::{Future, Stream, future::Either};
 use tokio_core::reactor::{Core, Handle, Timeout};
 
-use crate::nslogger::logger_state::HandlerMessageType;
-use crate::nslogger::DEBUG_LOGGER;
+use crate::nslogger::{DEBUG_LOGGER, logger_state::HandlerMessageType};
 
 pub trait BonjourService {
     fn setup_bonjour<T: BonjourService>(

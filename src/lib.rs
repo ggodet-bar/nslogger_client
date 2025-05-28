@@ -115,8 +115,7 @@ mod tests {
 
     #[test]
     fn logs_to_file() {
-        use std::fs;
-        use std::path::Path;
+        use std::{fs, path::Path};
 
         let mut log = Logger::new();
         log.set_message_flushing(true);
@@ -143,7 +142,8 @@ mod tests {
         log.logm(Some(Domain::App), Level::Warning, "message logged to file");
 
         log.set_bonjour_service(None, None, false);
-        //log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client no matter the setting
+        //log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client
+        // no matter the setting
         log.set_message_flushing(true);
         // FIXME Won't work: the change_option method will probably still be running
         log.logm(
@@ -210,9 +210,7 @@ mod tests {
 
     #[test]
     fn logs_image() {
-        use std::env;
-        use std::fs::File;
-        use std::io::Read;
+        use std::{env, fs::File, io::Read};
         let image_path = &env::current_dir().unwrap().join("tests/fixtures/zebra.png");
         let mut file_handle = File::open(image_path).unwrap();
         let mut buffer: Vec<u8> = vec![];

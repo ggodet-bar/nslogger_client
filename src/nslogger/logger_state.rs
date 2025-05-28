@@ -1,24 +1,26 @@
+use std::{
+    collections::HashMap,
+    fs::File,
+    io,
+    io::{BufWriter, Write},
+    net::TcpStream,
+    path::PathBuf,
+    sync::{atomic::Ordering, mpsc},
+    thread,
+    thread::Thread,
+};
+
 use integer_atomics::AtomicU32;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io;
-use std::io::BufWriter;
-use std::io::Write;
-use std::net::TcpStream;
-use std::path::PathBuf;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::thread;
-use std::thread::Thread;
+use openssl::{
+    self,
+    ssl::{SslConnector, SslMethod, SslStream},
+};
 
-use openssl;
-use openssl::ssl::{SslConnector, SslMethod, SslStream};
-
-use crate::nslogger::log_message::{LogMessage, LogMessageType, MessagePartKey};
-use crate::nslogger::network_manager;
-
-use crate::nslogger::LoggerOptions;
-use crate::nslogger::DEBUG_LOGGER;
+use crate::nslogger::{
+    DEBUG_LOGGER, LoggerOptions,
+    log_message::{LogMessage, LogMessageType, MessagePartKey},
+    network_manager,
+};
 
 #[derive(Debug)]
 pub enum HandlerMessageType {
@@ -190,9 +192,8 @@ impl LoggerState {
     }
 
     fn push_client_info_to_front_of_queue(&mut self) {
-        use std::env;
-        use std::ffi::OsStr;
-        use std::path::Path;
+        use std::{env, ffi::OsStr, path::Path};
+
         use sys_info;
 
         if DEBUG_LOGGER {
@@ -427,9 +428,9 @@ impl LoggerState {
     }
 
     pub fn create_buffer_write_stream(&mut self) {
+        use std::{fs::File, io::BufWriter};
+
         use crate::nslogger::logger_state::WriteStreamWrapper;
-        use std::fs::File;
-        use std::io::BufWriter;
 
         if self.log_file_path.is_none() {
             return;

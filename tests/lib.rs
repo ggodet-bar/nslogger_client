@@ -2,7 +2,7 @@
 extern crate log;
 extern crate nslogger;
 
-use std::sync::{Once, ONCE_INIT};
+use std::sync::{ONCE_INIT, Once};
 
 static START: Once = ONCE_INIT;
 
@@ -27,8 +27,10 @@ fn logs_messages_with_targets() {
 
 #[test]
 fn logs_messages_starting_from_different_threads() {
-    use std::sync::{Arc, Barrier};
-    use std::thread::spawn;
+    use std::{
+        sync::{Arc, Barrier},
+        thread::spawn,
+    };
 
     initialize_logger();
 
