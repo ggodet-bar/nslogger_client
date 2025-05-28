@@ -11,15 +11,15 @@ use std::{
 };
 
 use integer_atomics::AtomicU32;
+use log::log;
 use openssl::{
     self,
     ssl::{SslConnector, SslMethod, SslStream},
 };
 
 use crate::nslogger::{
-    DEBUG_LOGGER, LoggerOptions,
     log_message::{LogMessage, LogMessageType, MessagePartKey},
-    network_manager,
+    network_manager, LoggerOptions, DEBUG_LOGGER,
 };
 
 #[derive(Debug)]
@@ -122,13 +122,13 @@ impl LoggerState {
     pub fn process_log_queue(&mut self) {
         if self.log_messages.is_empty() {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "process_log_queue empty");
+                log::info!(target:"NSLogger", "process_log_queue empty");
             }
             return;
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "process_log_queue");
+            log::info!(target:"NSLogger", "process_log_queue");
         }
 
         self.setup_network_manager_if_required();
@@ -169,7 +169,7 @@ impl LoggerState {
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "[{:?}] finished processing log queue", thread::current().id());
+            log::info!(target:"NSLogger", "[{:?}] finished processing log queue", thread::current().id());
         }
     }
 
@@ -197,7 +197,7 @@ impl LoggerState {
         use sys_info;
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "pushing client info to front of queue");
+            log::info!(target:"NSLogger", "pushing client info to front of queue");
         }
 
         let mut message = LogMessage::new(
@@ -282,7 +282,7 @@ impl LoggerState {
 
                 if new_flags != self.options || change {
                     if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "changing options: {:?}. Closing/restarting.", new_options);
+                        log::info!(target:"NSLogger", "changing options: {:?}. Closing/restarting.", new_options);
                     }
 
                     if self.log_file_path.is_some() {
@@ -311,7 +311,7 @@ impl LoggerState {
             self.close_bonjour();
         } else {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "Setting up Bonjour");
+                log::info!(target:"NSLogger", "Setting up Bonjour");
             }
 
             let service_type = if (self.options & LoggerOptions::USE_SSL).is_empty() {
@@ -345,7 +345,7 @@ impl LoggerState {
         let remote_host = self.remote_host.as_ref().expect("remote host was none");
         let remote_port = self.remote_port.expect("remote port was none");
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "connecting to {}:{}", remote_host, remote_port);
+            log::info!(target:"NSLogger", "connecting to {}:{}", remote_host, remote_port);
         }
 
         let connect_string = format!("{}:{}", remote_host, remote_port);
@@ -355,12 +355,12 @@ impl LoggerState {
         };
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "{:?}", &stream);
+            log::info!(target:"NSLogger", "{:?}", &stream);
         }
         self.write_stream = Some(WriteStreamWrapper::Tcp(stream));
         if !(self.options & LoggerOptions::USE_SSL).is_empty() {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "activating SSL connection");
+                log::info!(target:"NSLogger", "activating SSL connection");
             }
 
             let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls()).unwrap();
@@ -374,7 +374,7 @@ impl LoggerState {
                 let stream = connector.connect("foo", inner_stream).unwrap();
                 self.write_stream = Some(WriteStreamWrapper::Ssl(stream));
                 if DEBUG_LOGGER {
-                    info!(target:"NSLogger", "opened SSL stream");
+                    log::info!(target:"NSLogger", "opened SSL stream");
                 }
             }
         }
@@ -387,7 +387,7 @@ impl LoggerState {
 
     pub fn disconnect_from_remote(&mut self) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "disconnect_from_remote()");
+            log::info!(target:"NSLogger", "disconnect_from_remote()");
         }
 
         self.is_connected = false;
@@ -414,7 +414,7 @@ impl LoggerState {
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "try_reconnecting");
+            log::info!(target:"NSLogger", "try_reconnecting");
         }
 
         if !(self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
@@ -437,7 +437,7 @@ impl LoggerState {
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Creating file buffer stream to {:?}", self.log_file_path.as_ref().unwrap());
+            log::info!(target:"NSLogger", "Creating file buffer stream to {:?}", self.log_file_path.as_ref().unwrap());
         }
 
         let file_writer =
@@ -448,7 +448,7 @@ impl LoggerState {
 
     pub fn close_buffer_write_stream(&mut self) {
         if DEBUG_LOGGER && self.write_stream.is_some() {
-            info!(target:"NSLogger", "Closing buffer stream");
+            log::info!(target:"NSLogger", "Closing buffer stream");
         }
 
         match self.write_stream.take() {
@@ -468,7 +468,7 @@ impl LoggerState {
     /// Write outstanding messages to the buffer file
     pub fn flush_queue_to_buffer_stream(&mut self) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "flush_queue_to_buffer_stream");
+            log::info!(target:"NSLogger", "flush_queue_to_buffer_stream");
         }
 
         self.write_messages_to_stream();
@@ -479,7 +479,7 @@ impl LoggerState {
             Ok(_) => (),
             Err(e) => {
                 if DEBUG_LOGGER {
-                    warn!(target:"NSLogger", "Write to stream failed: {:?}", e);
+                    log::warn!(target:"NSLogger", "Write to stream failed: {:?}", e);
                 }
 
                 self.disconnect_from_remote();
@@ -490,14 +490,14 @@ impl LoggerState {
 
     fn do_write_messages_to_stream(&mut self) -> io::Result<()> {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len());
+            log::info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len());
         }
 
         while !self.log_messages.is_empty() {
             {
                 let message = self.log_messages.first().unwrap();
                 if DEBUG_LOGGER {
-                    info!(target:"NSLogger", "processing message {}", &message.sequence_number);
+                    log::info!(target:"NSLogger", "processing message {}", &message.sequence_number);
                 }
 
                 let message_vec = message.get_bytes();
@@ -506,9 +506,9 @@ impl LoggerState {
                 if DEBUG_LOGGER {
                     use std::cmp;
                     if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "Writing to {:?}", self.write_stream.as_ref().unwrap());
-                        info!(target:"NSLogger", "length: {}", length);
-                        info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]);
+                        log::info!(target:"NSLogger", "Writing to {:?}", self.write_stream.as_ref().unwrap());
+                        log::info!(target:"NSLogger", "length: {}", length);
+                        log::info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]);
                     }
                 }
 
@@ -533,7 +533,7 @@ impl LoggerState {
 impl Drop for LoggerState {
     fn drop(&mut self) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "calling drop for logger state");
+            log::info!(target:"NSLogger", "calling drop for logger state");
         }
         self.disconnect_from_remote();
         self.action_sender

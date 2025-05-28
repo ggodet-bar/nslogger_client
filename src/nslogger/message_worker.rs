@@ -1,9 +1,11 @@
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
+
+use log::log;
 
 use crate::nslogger::{
-    DEBUG_LOGGER, LoggerOptions,
     logger_state::{HandlerMessageType, LoggerState},
     message_handler::MessageHandler,
+    LoggerOptions, DEBUG_LOGGER,
 };
 
 pub struct MessageWorker {
@@ -31,7 +33,7 @@ impl MessageWorker {
 
     pub fn run(&mut self) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Logging thread starting up");
+            log::info!(target:"NSLogger", "Logging thread starting up");
         }
 
         // Since we don't have a straightforward way to block the loop (cf Android), we'll setup
@@ -65,14 +67,14 @@ impl MessageWorker {
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Starting log event loop");
+            log::info!(target:"NSLogger", "Starting log event loop");
         }
 
         // Process messages
         self.handler.run_loop();
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Logging thread looper ended");
+            log::info!(target:"NSLogger", "Logging thread looper ended");
         }
 
         // Once loop exists, reset the variable (in case of problem we'll recreate a thread)

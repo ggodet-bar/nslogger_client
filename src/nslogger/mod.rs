@@ -2,13 +2,15 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, Condvar, Mutex, mpsc},
+    sync::{mpsc, Arc, Condvar, Mutex},
     thread,
     thread::spawn,
     time::Duration,
 };
 
-use log;
+use bitflags::bitflags;
+use cfg_if::cfg_if;
+use log::log;
 
 const DEBUG_LOGGER: bool = false & cfg!(test);
 
@@ -62,7 +64,7 @@ impl Logger {
 
                             env_logger::init() ;
                         }) ;
-                        info!(target:"NSLogger", "NSLogger client started") ;
+                        log::info!(target:"NSLogger", "NSLogger client started") ;
                     }
                 }
                 else {
@@ -125,7 +127,7 @@ impl Logger {
 
     pub fn set_remote_host(&mut self, host_name: &str, host_port: u16, use_ssl: bool) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "set_remote_host host={} port={} use_ssl={}", host_name, host_port, use_ssl);
+            log::info!(target:"NSLogger", "set_remote_host host={} port={} use_ssl={}", host_name, host_port, use_ssl);
         }
 
         if self.shared_state.lock().unwrap().ready {
@@ -158,7 +160,7 @@ impl Logger {
 
     pub fn set_log_file_path(&mut self, file_path: &str) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "set_log_file_path path={:?}", file_path);
+            log::info!(target:"NSLogger", "set_log_file_path path={:?}", file_path);
         }
 
         if self.shared_state.lock().unwrap().ready {
@@ -192,13 +194,13 @@ impl Logger {
         message: &str,
     ) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "entering log");
+            log::info!(target:"NSLogger", "entering log");
         }
         self.start_logging_thread_if_needed();
 
         if !self.shared_state.lock().unwrap().is_handler_running {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "Early return");
+                log::info!(target:"NSLogger", "Early return");
             }
             return;
         }
@@ -220,7 +222,7 @@ impl Logger {
 
         self.send_and_flush_if_required(log_message);
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Exiting log");
+            log::info!(target:"NSLogger", "Exiting log");
         }
     }
 
@@ -241,12 +243,12 @@ impl Logger {
     pub fn log_mark(&self, message: Option<&str>) {
         use chrono;
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "entering log_mark");
+            log::info!(target:"NSLogger", "entering log_mark");
         }
         self.start_logging_thread_if_needed();
         if !self.shared_state.lock().unwrap().is_handler_running {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "Early return");
+                log::info!(target:"NSLogger", "Early return");
             }
             return;
         }
@@ -278,7 +280,7 @@ impl Logger {
         self.send_and_flush_if_required(log_message);
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "leaving log_mark");
+            log::info!(target:"NSLogger", "leaving log_mark");
         }
     }
 
@@ -292,13 +294,13 @@ impl Logger {
         data: &[u8],
     ) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "entering log_data");
+            log::info!(target:"NSLogger", "entering log_data");
         }
 
         self.start_logging_thread_if_needed();
         if !self.shared_state.lock().unwrap().is_handler_running {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "Early return");
+                log::info!(target:"NSLogger", "Early return");
             }
             return;
         }
@@ -321,7 +323,7 @@ impl Logger {
         self.send_and_flush_if_required(log_message);
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "leaving log_data");
+            log::info!(target:"NSLogger", "leaving log_data");
         }
     }
 
@@ -335,12 +337,12 @@ impl Logger {
         data: &[u8],
     ) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "entering log_image");
+            log::info!(target:"NSLogger", "entering log_image");
         }
         self.start_logging_thread_if_needed();
         if !self.shared_state.lock().unwrap().is_handler_running {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "Early return");
+                log::info!(target:"NSLogger", "Early return");
             }
             return;
         }
@@ -363,7 +365,7 @@ impl Logger {
         self.send_and_flush_if_required(log_message);
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "leaving log_image");
+            log::info!(target:"NSLogger", "leaving log_image");
         }
     }
 
@@ -389,7 +391,7 @@ impl Logger {
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Waiting for worker to be ready");
+            log::info!(target:"NSLogger", "Waiting for worker to be ready");
         }
 
         while !self.shared_state.lock().unwrap().ready {
@@ -403,7 +405,7 @@ impl Logger {
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "Worker is ready and running");
+            log::info!(target:"NSLogger", "Worker is ready and running");
         }
     }
 
@@ -412,7 +414,7 @@ impl Logger {
             & LoggerOptions::FLUSH_EACH_MESSAGE)
             .is_empty();
         if DEBUG_LOGGER && !needs_flush {
-            warn!(target:"NSLogger", "no need to flush!!");
+            log::warn!(target:"NSLogger", "no need to flush!!");
         }
         let mut flush_rx: Option<mpsc::Receiver<bool>> = None;
         if needs_flush {
@@ -424,11 +426,11 @@ impl Logger {
 
         if needs_flush {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "waiting for message flush");
+                log::info!(target:"NSLogger", "waiting for message flush");
             }
             flush_rx.unwrap().recv();
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "message flush ack received");
+                log::info!(target:"NSLogger", "message flush ack received");
             }
         }
     }
@@ -437,7 +439,7 @@ impl Logger {
 impl Drop for Logger {
     fn drop(&mut self) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "calling drop for logger instance");
+            log::info!(target:"NSLogger", "calling drop for logger instance");
         }
 
         self.message_sender.send(HandlerMessageType::Quit);

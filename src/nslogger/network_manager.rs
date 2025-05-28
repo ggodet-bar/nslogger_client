@@ -1,10 +1,11 @@
 use std::{io, net::ToSocketAddrs, sync::mpsc, time::Duration};
 
 use async_dnssd::{self, Interface};
-use futures::{Future, Stream, future::Either};
+use futures::{future::Either, Future, Stream};
+use log::log;
 use tokio_core::reactor::{Core, Handle, Timeout};
 
-use crate::nslogger::{DEBUG_LOGGER, logger_state::HandlerMessageType};
+use crate::nslogger::{logger_state::HandlerMessageType, DEBUG_LOGGER};
 
 pub trait BonjourService {
     fn setup_bonjour<T: BonjourService>(
@@ -47,12 +48,12 @@ impl<T: BonjourService> NetworkManager<T> {
     }
     pub fn run(&mut self) {
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "starting network manager");
+            log::info!(target:"NSLogger", "starting network manager");
         }
 
         for message in &self.action_receiver {
             if DEBUG_LOGGER {
-                info!(target:"NSLogger", "network manager received message");
+                log::info!(target:"NSLogger", "network manager received message");
             }
 
             match message {
@@ -79,7 +80,7 @@ impl<T: BonjourService> NetworkManager<T> {
                             }
                             Ok(_) => {
                                 if DEBUG_LOGGER {
-                                    info!(target:"NSLogger", "couldn't resolve Bonjour. Will retry in a few seconds");
+                                    log::info!(target:"NSLogger", "couldn't resolve Bonjour. Will retry in a few seconds");
                                 }
 
                                 current_delay = Some(10000);
@@ -90,7 +91,7 @@ impl<T: BonjourService> NetworkManager<T> {
                 }
                 NetworkActionMessage::Quit => {
                     if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "properly exiting the network manager");
+                        log::info!(target:"NSLogger", "properly exiting the network manager");
                     }
 
                     break;
@@ -100,7 +101,7 @@ impl<T: BonjourService> NetworkManager<T> {
         }
 
         if DEBUG_LOGGER {
-            info!(target:"NSLogger", "stopping network manager");
+            log::info!(target:"NSLogger", "stopping network manager");
         }
     }
 }
@@ -115,10 +116,7 @@ impl DefaultBonjourService {
         let core = Core::new().unwrap();
         let handle = core.handle();
 
-        DefaultBonjourService {
-            core: core,
-            handle: handle,
-        }
+        DefaultBonjourService { core, handle }
     }
 }
 
@@ -150,8 +148,8 @@ impl BonjourService for DefaultBonjourService {
                 Either::A(((result, _), _)) => {
                     let browse_result = result.unwrap();
                     if DEBUG_LOGGER {
-                        info!(target:"NSLogger", "Browse result: {:?}", browse_result);
-                        info!(target:"NSLogger", "Service name: {}", browse_result.service_name);
+                        log::info!(target:"NSLogger", "Browse result: {:?}", browse_result);
+                        log::info!(target:"NSLogger", "Service name: {}", browse_result.service_name);
                     }
                     let bonjour_service_name = browse_result.service_name.to_string();
                     let mut remote_host: Option<String> = None;
@@ -163,7 +161,7 @@ impl BonjourService for DefaultBonjourService {
                         Ok((resolve_result, _)) => {
                             let resolve_details = resolve_result.unwrap();
                             if DEBUG_LOGGER {
-                                info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details);
+                                log::info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details);
                             }
                             for host_addr in
                                 format!("{}:{}", resolve_details.host_target, resolve_details.port)
@@ -173,7 +171,7 @@ impl BonjourService for DefaultBonjourService {
                                 if host_addr.ip().is_ipv4() {
                                     let ip_address = format!("{}", host_addr.ip());
                                     if DEBUG_LOGGER {
-                                        info!(target:"NSLogger", "Bonjour host details {:?}", host_addr);
+                                        log::info!(target:"NSLogger", "Bonjour host details {:?}", host_addr);
                                     }
                                     remote_host = Some(ip_address);
                                     remote_port = Some(resolve_details.port);
@@ -189,14 +187,14 @@ impl BonjourService for DefaultBonjourService {
                         }
                         Err(_) => {
                             if DEBUG_LOGGER {
-                                warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
+                                log::warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
                             }
                         }
                     };
                 }
                 Either::B((_, _)) => {
                     if DEBUG_LOGGER {
-                        warn!(target:"NSLogger", "Bonjour discovery timed out")
+                        log::warn!(target:"NSLogger", "Bonjour discovery timed out")
                     }
 
                     return Ok(BonjourServiceStatus::TimedOut);
@@ -204,7 +202,7 @@ impl BonjourService for DefaultBonjourService {
             },
             Err(_) => {
                 if DEBUG_LOGGER {
-                    warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
+                    log::warn!(target:"NSLogger", "Couldn't resolve Bonjour service")
                 }
             }
         };

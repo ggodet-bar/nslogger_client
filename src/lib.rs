@@ -14,30 +14,6 @@
 //! - builder pattern for logger initialization
 //! - possibly some optimizations.
 
-#[macro_use]
-extern crate bitflags;
-
-#[macro_use]
-extern crate log;
-
-#[cfg(test)]
-extern crate env_logger;
-
-extern crate async_dnssd;
-extern crate futures;
-extern crate openssl;
-extern crate tokio_core;
-
-extern crate byteorder;
-
-extern crate chrono;
-
-#[macro_use]
-extern crate cfg_if;
-
-extern crate integer_atomics;
-extern crate sys_info;
-
 pub mod nslogger;
 
 pub use nslogger::Logger;

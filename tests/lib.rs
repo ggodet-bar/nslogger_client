@@ -2,9 +2,9 @@
 extern crate log;
 extern crate nslogger;
 
-use std::sync::{ONCE_INIT, Once};
+use std::sync::Once;
 
-static START: Once = ONCE_INIT;
+static START: Once = Once::new();
 
 #[test]
 fn logs_simple_messages() {
