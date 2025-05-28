@@ -10,18 +10,17 @@ crate-type = ["lib"]
 path = "src/lib.rs"
 
 [dependencies]
-async-dnssd = "0.3"
-futures = "0.1"
-tokio-core = "0.1"
-mio  = "0.6"
+async-dnssd = "0.5"
 bitflags = "2.9"
-openssl = "0.10"
-byteorder = "1.0"
+byteorder = "1.0" # TODO Remove
+cfg-if = "1.0"
 chrono = "0.4"
-log = "0.3"
-cfg-if = "0.1"
-sys-info = "0.5"
-integer-atomics = "1.0"
+futures = "0.3"
+log = "0.3" # TODO UPDATE TO 0.4
+mio  = "0.6"
+openssl = "0.10"
+sys-info = "0.9"
+tokio = { version = "1.4", features = [ "macros", "time" ] }
 
 [dev-dependencies]
 env_logger = "*"

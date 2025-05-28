@@ -5,17 +5,17 @@ use std::{
     io::{BufWriter, Write},
     net::TcpStream,
     path::PathBuf,
-    sync::{atomic::Ordering, mpsc},
+    sync::atomic::{AtomicU32, Ordering},
     thread,
     thread::Thread,
 };
 
-use integer_atomics::AtomicU32;
 use log::log;
 use openssl::{
     self,
     ssl::{SslConnector, SslMethod, SslStream},
 };
+use tokio::sync::mpsc;
 
 use crate::nslogger::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
@@ -78,21 +78,21 @@ pub struct LoggerState {
     //pub write_stream:Option<Write + 'static:std::marker::Sized>,
     next_sequence_numbers: AtomicU32,
     pub log_messages: Vec<LogMessage>,
-    message_sender: mpsc::Sender<HandlerMessageType>,
-    pub message_receiver: Option<mpsc::Receiver<HandlerMessageType>>,
+    message_sender: mpsc::UnboundedSender<HandlerMessageType>,
+    pub message_receiver: Option<mpsc::UnboundedReceiver<HandlerMessageType>>,
 
     pub log_file_path: Option<PathBuf>,
 
-    action_sender: mpsc::Sender<network_manager::NetworkActionMessage>,
-    action_receiver: Option<mpsc::Receiver<network_manager::NetworkActionMessage>>,
+    action_sender: mpsc::UnboundedSender<network_manager::NetworkActionMessage>,
+    action_receiver: Option<mpsc::UnboundedReceiver<network_manager::NetworkActionMessage>>,
 }
 
 impl LoggerState {
     pub fn new(
-        message_sender: mpsc::Sender<HandlerMessageType>,
-        message_receiver: mpsc::Receiver<HandlerMessageType>,
+        message_sender: mpsc::UnboundedSender<HandlerMessageType>,
+        message_receiver: mpsc::UnboundedReceiver<HandlerMessageType>,
     ) -> LoggerState {
-        let (action_sender, action_receiver) = mpsc::channel();
+        let (action_sender, action_receiver) = mpsc::unbounded_channel();
 
         LoggerState {
             options: LoggerOptions::BROWSE_BONJOUR | LoggerOptions::USE_SSL,
@@ -181,13 +181,14 @@ impl LoggerState {
         let action_receiver = self.action_receiver.take().unwrap();
         let message_sender = self.message_sender.clone();
 
-        thread::spawn(move || {
+        tokio::task::spawn(async move {
             network_manager::NetworkManager::new(
                 action_receiver,
                 message_sender,
-                network_manager::DefaultBonjourService::new(),
+                network_manager::DefaultBonjourService::default(),
             )
-            .run();
+            .run()
+            .await;
         });
     }
 

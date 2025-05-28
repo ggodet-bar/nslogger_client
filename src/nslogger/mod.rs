@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{mpsc, Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex},
     thread,
     thread::spawn,
     time::Duration,
@@ -11,6 +11,7 @@ use std::{
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use log::log;
+use tokio::sync::mpsc;
 
 const DEBUG_LOGGER: bool = false & cfg!(test);
 
@@ -51,7 +52,7 @@ bitflags! {
 pub struct Logger {
     shared_state: Arc<Mutex<LoggerState>>,
     ready_cvar: Arc<Condvar>,
-    message_sender: mpsc::Sender<HandlerMessageType>,
+    message_sender: mpsc::UnboundedSender<HandlerMessageType>,
 }
 
 impl Logger {
@@ -74,7 +75,7 @@ impl Logger {
 
             init_test_logger();
         }
-        let (message_sender, message_receiver) = mpsc::channel();
+        let (message_sender, message_receiver) = mpsc::unbounded_channel();
         let sender_clone = message_sender.clone();
 
         return Logger {
@@ -416,7 +417,7 @@ impl Logger {
         if DEBUG_LOGGER && !needs_flush {
             log::warn!(target:"NSLogger", "no need to flush!!");
         }
-        let mut flush_rx: Option<mpsc::Receiver<bool>> = None;
+        let mut flush_rx: Option<mpsc::UnboundedReceiver<bool>> = None;
         if needs_flush {
             flush_rx = log_message.flush_rx.take();
         }

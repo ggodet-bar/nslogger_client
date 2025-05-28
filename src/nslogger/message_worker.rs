@@ -1,6 +1,7 @@
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use log::log;
+use tokio::sync::mpsc;
 
 use crate::nslogger::{
     logger_state::{HandlerMessageType, LoggerState},
@@ -10,7 +11,7 @@ use crate::nslogger::{
 
 pub struct MessageWorker {
     pub shared_state: Arc<Mutex<LoggerState>>,
-    pub message_sender: mpsc::Sender<HandlerMessageType>,
+    pub message_sender: mpsc::UnboundedSender<HandlerMessageType>,
     handler: MessageHandler,
     ready_cvar: Arc<Condvar>,
 }
@@ -19,8 +20,8 @@ impl MessageWorker {
     pub fn new(
         logger_state: Arc<Mutex<LoggerState>>,
         ready_cvar: Arc<Condvar>,
-        message_sender: mpsc::Sender<HandlerMessageType>,
-        handler_receiver: mpsc::Receiver<HandlerMessageType>,
+        message_sender: mpsc::UnboundedSender<HandlerMessageType>,
+        handler_receiver: mpsc::UnboundedReceiver<HandlerMessageType>,
     ) -> MessageWorker {
         let state_clone = logger_state.clone();
         MessageWorker {

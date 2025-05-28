@@ -1,6 +1,7 @@
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 
 use log::log;
+use tokio::sync::mpsc;
 
 use crate::nslogger::{
     logger_state::{HandlerMessageType, LoggerState},
@@ -8,13 +9,13 @@ use crate::nslogger::{
 };
 
 pub struct MessageHandler {
-    channel_receiver: mpsc::Receiver<HandlerMessageType>,
+    channel_receiver: mpsc::UnboundedReceiver<HandlerMessageType>,
     shared_state: Arc<Mutex<LoggerState>>,
 }
 
 impl MessageHandler {
     pub fn new(
-        receiver: mpsc::Receiver<HandlerMessageType>,
+        receiver: mpsc::UnboundedReceiver<HandlerMessageType>,
         shared_state: Arc<Mutex<LoggerState>>,
     ) -> MessageHandler {
         MessageHandler {
@@ -23,9 +24,9 @@ impl MessageHandler {
         }
     }
 
-    pub fn run_loop(&self) {
+    pub async fn run_loop(&mut self) {
         (*self.shared_state.lock().unwrap()).is_handler_running = true;
-        for message in &self.channel_receiver {
+        while let Some(message) = self.channel_receiver.recv().await {
             if DEBUG_LOGGER {
                 log::info!(target:"NSLogger", "[{:?}] Received message", std::thread::current().id());
             }
@@ -78,11 +79,9 @@ impl MessageHandler {
 
                     local_shared_state.connect_to_remote();
                 }
-
                 HandlerMessageType::Quit => {
                     break;
                 }
-                _ => (),
             }
         }
 

@@ -1,7 +1,8 @@
-use std::{fmt, path::Path, str::FromStr, sync::mpsc, thread, time};
+use std::{fmt, path::Path, str::FromStr, thread, time};
 
 use byteorder::{NetworkEndian, WriteBytesExt};
 use log;
+use tokio::sync::mpsc;
 
 #[derive(Debug, PartialEq)]
 pub enum Domain {
@@ -75,9 +76,9 @@ impl Level {
 #[derive(Copy, Clone)]
 pub enum MessagePartKey {
     MessageType = 0,
-    TimestampS = 1,  // "seconds" component of timestamp
+    TimestampS = 1, // "seconds" component of timestamp
     TimestampMs = 2, /* milliseconds component of timestamp (optional, mutually exclusive with
-                      * TIMESTAMP_US) */
+                     * TIMESTAMP_US) */
     TimestampUs = 3, /* microseconds component of timestamp (optional, mutually exclusive with
                       * TIMESTAMP_MS) */
     ThreadId = 4,
@@ -130,20 +131,20 @@ pub struct LogMessage {
     data: Vec<u8>,
     data_used: u32,
     part_count: u16,
-    pub flush_rx: Option<mpsc::Receiver<bool>>,
-    pub flush_tx: mpsc::Sender<bool>,
+    pub flush_rx: Option<mpsc::UnboundedReceiver<bool>>,
+    pub flush_tx: mpsc::UnboundedSender<bool>,
 }
 
 impl LogMessage {
     pub fn new(message_type: LogMessageType, sequence_number: u32) -> LogMessage {
-        let (flush_tx, flush_rx) = mpsc::channel();
+        let (flush_tx, flush_rx) = mpsc::unbounded_channel();
         let mut new_message = LogMessage {
-            sequence_number: sequence_number,
+            sequence_number,
             data: Vec::with_capacity(256),
             data_used: 6,
             part_count: 0,
             flush_rx: Some(flush_rx),
-            flush_tx: flush_tx,
+            flush_tx,
         };
 
         new_message.add_int32(MessagePartKey::MessageType, message_type as u32);
