@@ -15,10 +15,10 @@ const DEBUG_LOGGER: bool = false & cfg!(test);
 #[cfg(test)]
 use env_logger;
 #[cfg(test)]
-use std::sync::{Once, ONCE_INIT};
+use std::sync::Once;
 
 #[cfg(test)]
-static START: Once = ONCE_INIT;
+static START: Once = Once::new();
 
 mod log_message;
 mod logger_state;
@@ -34,13 +34,13 @@ use self::logger_state::{HandlerMessageType, LoggerState};
 use self::message_worker::MessageWorker;
 
 bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct LoggerOptions: u16 {
-        const FLUSH_EACH_MESSAGE   = 0b00000001 ;
-        // If set, NSLogger waits for each message to be sent to the desktop viewer (this includes connecting to the viewer)
-
-        const BROWSE_BONJOUR       = 0b00000010 ;
-        const USE_SSL              = 0b00000100 ;
-        const ROUTE_TO_LOGCAT      = 0b00001000 ;
+        /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer)
+        const FLUSH_EACH_MESSAGE   = 0b00000001;
+        const BROWSE_BONJOUR       = 0b00000010;
+        const USE_SSL              = 0b00000100;
+        const ROUTE_TO_LOGCAT      = 0b00001000;
     }
 }
 
@@ -74,7 +74,7 @@ impl Logger {
         let sender_clone = message_sender.clone();
 
         return Logger {
-            message_sender: message_sender,
+            message_sender,
             shared_state: Arc::new(Mutex::new(LoggerState::new(sender_clone, message_receiver))),
             ready_cvar: Arc::new(Condvar::new()),
         };
@@ -111,12 +111,12 @@ impl Logger {
                 service_name.and_then(|v| Some(v.to_string()));
             (*local_shared_state).bonjour_service_type =
                 service_type.and_then(|v| Some(v.to_string()));
-            (*local_shared_state).options |= BROWSE_BONJOUR;
+            (*local_shared_state).options |= LoggerOptions::BROWSE_BONJOUR;
 
             if use_ssl {
-                (*local_shared_state).options = local_shared_state.options | USE_SSL;
+                (*local_shared_state).options = local_shared_state.options | LoggerOptions::USE_SSL;
             } else {
-                (*local_shared_state).options = local_shared_state.options - USE_SSL;
+                (*local_shared_state).options = local_shared_state.options - LoggerOptions::USE_SSL;
             }
         }
     }
@@ -147,9 +147,9 @@ impl Logger {
             (*local_shared_state).remote_port = Some(host_port);
 
             if use_ssl {
-                (*local_shared_state).options = local_shared_state.options | USE_SSL;
+                (*local_shared_state).options = local_shared_state.options | LoggerOptions::USE_SSL;
             } else {
-                (*local_shared_state).options = local_shared_state.options - USE_SSL;
+                (*local_shared_state).options = local_shared_state.options - LoggerOptions::USE_SSL;
             }
         }
     }
@@ -174,9 +174,9 @@ impl Logger {
     pub fn set_message_flushing(&mut self, flush_each_message: bool) {
         let mut local_state = self.shared_state.lock().unwrap();
         if flush_each_message {
-            local_state.options |= FLUSH_EACH_MESSAGE;
+            local_state.options |= LoggerOptions::FLUSH_EACH_MESSAGE;
         } else {
-            local_state.options -= FLUSH_EACH_MESSAGE;
+            local_state.options -= LoggerOptions::FLUSH_EACH_MESSAGE;
         }
     }
 
@@ -407,8 +407,9 @@ impl Logger {
     }
 
     fn send_and_flush_if_required(&self, mut log_message: LogMessage) {
-        let needs_flush =
-            !(self.shared_state.lock().unwrap().options & FLUSH_EACH_MESSAGE).is_empty();
+        let needs_flush = !(self.shared_state.lock().unwrap().options
+            & LoggerOptions::FLUSH_EACH_MESSAGE)
+            .is_empty();
         if DEBUG_LOGGER && !needs_flush {
             warn!(target:"NSLogger", "no need to flush!!");
         }

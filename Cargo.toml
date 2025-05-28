@@ -1,8 +1,8 @@
 [package]
 name = "nslogger_client"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Guillaume Godet-Bar <guillaume.godetbar@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 [lib]
 name="nslogger"
@@ -14,7 +14,7 @@ async-dnssd = "0.3"
 futures = "0.1"
 tokio-core = "0.1"
 mio  = "0.6"
-bitflags = "0.9"
+bitflags = "2.9"
 openssl = "0.10"
 byteorder = "1.0"
 chrono = "0.4"

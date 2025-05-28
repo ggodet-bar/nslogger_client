@@ -19,7 +19,6 @@ use crate::nslogger::network_manager;
 
 use crate::nslogger::LoggerOptions;
 use crate::nslogger::DEBUG_LOGGER;
-use crate::nslogger::{BROWSE_BONJOUR, USE_SSL};
 
 #[derive(Debug)]
 pub enum HandlerMessageType {
@@ -94,7 +93,7 @@ impl LoggerState {
         let (action_sender, action_receiver) = mpsc::channel();
 
         LoggerState {
-            options: BROWSE_BONJOUR | USE_SSL,
+            options: LoggerOptions::BROWSE_BONJOUR | LoggerOptions::USE_SSL,
             ready_waiters: vec![],
             bonjour_service_type: None,
             bonjour_service_name: None,
@@ -109,11 +108,11 @@ impl LoggerState {
             is_client_info_added: false,
             next_sequence_numbers: AtomicU32::new(0),
             log_messages: vec![],
-            message_sender: message_sender,
+            message_sender,
             message_receiver: Some(message_receiver),
             log_file_path: None,
 
-            action_sender: action_sender,
+            action_sender,
             action_receiver: Some(action_receiver),
         }
     }
@@ -141,7 +140,7 @@ impl LoggerState {
                 self.create_buffer_write_stream();
             } else if !(self.is_connecting
                 || self.is_reconnection_scheduled
-                || !(self.options & BROWSE_BONJOUR).is_empty())
+                || !(self.options & LoggerOptions::BROWSE_BONJOUR).is_empty())
             {
                 if self.remote_host.is_some() && self.remote_port.is_some() {
                     self.connect_to_remote();
@@ -206,7 +205,7 @@ impl LoggerState {
         );
 
         match sys_info::os_type() {
-            Ok(name) => {
+            Ok(_) => {
                 match sys_info::os_release() {
                     Ok(release) => message.add_string(MessagePartKey::OsVersion, &release),
                     _ => (),
@@ -257,7 +256,7 @@ impl LoggerState {
                 match new_options.get("use_ssl") {
                     Some(ssl) => {
                         if ssl == "1" {
-                            new_flags |= USE_SSL;
+                            new_flags |= LoggerOptions::USE_SSL;
                         }
                     }
                     None => (),
@@ -270,14 +269,14 @@ impl LoggerState {
                             .get("remote_port")
                             .and_then(|port_string| u16::from_str_radix(port_string, 10).ok());
 
-                        if !change && (self.options & BROWSE_BONJOUR).is_empty() {
+                        if !change && (self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
                             // check if the port or host is changing
                             change = self.remote_host.is_none()
                                 || self.remote_host.as_ref().unwrap() != host.as_ref().unwrap()
                                 || self.remote_port.as_ref().unwrap() != port.as_ref().unwrap();
                         }
                     }
-                    None => new_flags |= BROWSE_BONJOUR,
+                    None => new_flags |= LoggerOptions::BROWSE_BONJOUR,
                 };
 
                 if new_flags != self.options || change {
@@ -293,7 +292,7 @@ impl LoggerState {
 
                     self.options = new_flags;
 
-                    if (new_flags & BROWSE_BONJOUR).is_empty() {
+                    if (new_flags & LoggerOptions::BROWSE_BONJOUR).is_empty() {
                         self.remote_host = host;
                         self.remote_port = port;
 
@@ -307,14 +306,14 @@ impl LoggerState {
     }
 
     pub fn setup_bonjour(&mut self) -> io::Result<()> {
-        if (self.options & BROWSE_BONJOUR).is_empty() {
+        if (self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
             self.close_bonjour();
         } else {
             if DEBUG_LOGGER {
                 info!(target:"NSLogger", "Setting up Bonjour");
             }
 
-            let service_type = if (self.options & USE_SSL).is_empty() {
+            let service_type = if (self.options & LoggerOptions::USE_SSL).is_empty() {
                 "_nslogger._tcp"
             } else {
                 "_nslogger-ssl._tcp"
@@ -358,7 +357,7 @@ impl LoggerState {
             info!(target:"NSLogger", "{:?}", &stream);
         }
         self.write_stream = Some(WriteStreamWrapper::Tcp(stream));
-        if !(self.options & USE_SSL).is_empty() {
+        if !(self.options & LoggerOptions::USE_SSL).is_empty() {
             if DEBUG_LOGGER {
                 info!(target:"NSLogger", "activating SSL connection");
             }
@@ -394,7 +393,7 @@ impl LoggerState {
         self.is_connecting = false;
         self.is_client_info_added = false;
 
-        if !(self.options & BROWSE_BONJOUR).is_empty() {
+        if !(self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
             // Otherwise we'll always try to connect to the same host & port, which might change
             // from one connection to the next.
             self.remote_host = None;
@@ -417,7 +416,7 @@ impl LoggerState {
             info!(target:"NSLogger", "try_reconnecting");
         }
 
-        if !(self.options & BROWSE_BONJOUR).is_empty() {
+        if !(self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
             self.setup_bonjour();
         } else {
             self.is_reconnection_scheduled = true;

@@ -24,7 +24,7 @@ pub enum NetworkActionMessage {
     Quit,
 }
 
-enum BonjourServiceStatus {
+pub enum BonjourServiceStatus {
     ServiceFound(String, String, u16),
     TimedOut,
     Unresolved,
@@ -44,10 +44,10 @@ impl<T: BonjourService> NetworkManager<T> {
         bonjour_service: T,
     ) -> NetworkManager<T> {
         NetworkManager {
-            action_receiver: action_receiver,
-            message_sender: message_sender,
+            action_receiver,
+            message_sender,
 
-            bonjour_service: bonjour_service,
+            bonjour_service,
         }
     }
     pub fn run(&mut self) {

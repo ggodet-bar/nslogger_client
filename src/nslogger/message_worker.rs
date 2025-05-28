@@ -3,8 +3,7 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use crate::nslogger::logger_state::{HandlerMessageType, LoggerState};
 use crate::nslogger::message_handler::MessageHandler;
-
-use crate::nslogger::BROWSE_BONJOUR;
+use crate::nslogger::LoggerOptions;
 use crate::nslogger::DEBUG_LOGGER;
 
 pub struct MessageWorker {
@@ -24,8 +23,8 @@ impl MessageWorker {
         let state_clone = logger_state.clone();
         MessageWorker {
             shared_state: logger_state,
-            ready_cvar: ready_cvar,
-            message_sender: message_sender,
+            ready_cvar,
+            message_sender,
             handler: MessageHandler::new(handler_receiver, state_clone),
         }
     }
@@ -49,7 +48,9 @@ impl MessageWorker {
             shared_state.remote_host.is_some() && shared_state.remote_port.is_some()
         } {
             self.shared_state.lock().unwrap().connect_to_remote();
-        } else if !(self.shared_state.lock().unwrap().options & BROWSE_BONJOUR).is_empty() {
+        } else if !(self.shared_state.lock().unwrap().options & LoggerOptions::BROWSE_BONJOUR)
+            .is_empty()
+        {
             self.shared_state.lock().unwrap().setup_bonjour();
             // Simply triggers an async bonjour service search. The service probably won't be ready
             // when returning from setup_bonjour().
