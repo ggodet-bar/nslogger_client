@@ -14,12 +14,12 @@ use std::thread::Thread;
 use openssl;
 use openssl::ssl::{SslConnector, SslMethod, SslStream};
 
-use nslogger::log_message::{LogMessage, LogMessageType, MessagePartKey};
-use nslogger::network_manager;
+use crate::nslogger::log_message::{LogMessage, LogMessageType, MessagePartKey};
+use crate::nslogger::network_manager;
 
-use nslogger::LoggerOptions;
-use nslogger::DEBUG_LOGGER;
-use nslogger::{BROWSE_BONJOUR, USE_SSL};
+use crate::nslogger::LoggerOptions;
+use crate::nslogger::DEBUG_LOGGER;
+use crate::nslogger::{BROWSE_BONJOUR, USE_SSL};
 
 #[derive(Debug)]
 pub enum HandlerMessageType {
@@ -47,7 +47,7 @@ impl WriteStreamWrapper {
         self.unwrap().flush()
     }
 
-    fn unwrap(&mut self) -> &mut Write {
+    fn unwrap(&mut self) -> &mut dyn Write {
         match *self {
             WriteStreamWrapper::Tcp(ref mut stream) => stream,
             WriteStreamWrapper::Ssl(ref mut stream) => stream,
@@ -428,7 +428,7 @@ impl LoggerState {
     }
 
     pub fn create_buffer_write_stream(&mut self) {
-        use nslogger::logger_state::WriteStreamWrapper;
+        use crate::nslogger::logger_state::WriteStreamWrapper;
         use std::fs::File;
         use std::io::BufWriter;
 
@@ -513,9 +513,8 @@ impl LoggerState {
                 }
 
                 {
-                    let mut tcp_stream = self.write_stream.as_mut().unwrap();
-
-                    try![tcp_stream.write_all(message_bytes)];
+                    let tcp_stream = self.write_stream.as_mut().unwrap();
+                    tcp_stream.write_all(message_bytes)?;
                 }
 
                 match message.flush_rx {

@@ -1,11 +1,11 @@
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 
-use nslogger::logger_state::{HandlerMessageType, LoggerState};
-use nslogger::message_handler::MessageHandler;
+use crate::nslogger::logger_state::{HandlerMessageType, LoggerState};
+use crate::nslogger::message_handler::MessageHandler;
 
-use nslogger::BROWSE_BONJOUR;
-use nslogger::DEBUG_LOGGER;
+use crate::nslogger::BROWSE_BONJOUR;
+use crate::nslogger::DEBUG_LOGGER;
 
 pub struct MessageWorker {
     pub shared_state: Arc<Mutex<LoggerState>>,

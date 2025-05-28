@@ -8,8 +8,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 use tokio_core::reactor::{Core, Handle, Timeout};
 
-use nslogger::logger_state::HandlerMessageType;
-use nslogger::DEBUG_LOGGER;
+use crate::nslogger::logger_state::HandlerMessageType;
+use crate::nslogger::DEBUG_LOGGER;
 
 pub trait BonjourService {
     fn setup_bonjour<T: BonjourService>(

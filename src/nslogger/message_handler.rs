@@ -2,8 +2,8 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use nslogger::logger_state::{HandlerMessageType, LoggerState};
-use nslogger::DEBUG_LOGGER;
+use crate::nslogger::logger_state::{HandlerMessageType, LoggerState};
+use crate::nslogger::DEBUG_LOGGER;
 
 pub struct MessageHandler {
     channel_receiver: mpsc::Receiver<HandlerMessageType>,
@@ -17,7 +17,7 @@ impl MessageHandler {
     ) -> MessageHandler {
         MessageHandler {
             channel_receiver: receiver,
-            shared_state: shared_state,
+            shared_state,
         }
     }
 

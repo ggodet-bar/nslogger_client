@@ -50,7 +50,7 @@ pub use nslogger::Logger;
 pub fn init() -> Result<(), log::SetLoggerError> {
     log::set_logger(|max_log_level| {
         max_log_level.set(log::LogLevelFilter::Info);
-        let mut logger = Logger::new();
+        let logger = Logger::new();
         //logger.set_message_flushing(true) ;
         Box::new(logger)
     })
@@ -58,12 +58,11 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 
 #[cfg(test)]
 mod tests {
-    use nslogger::{Domain, Level, Logger};
+    use crate::nslogger::{Domain, Level, Logger};
 
     #[test]
     fn connects_via_bonjour_with_ssl() {
-        use std::{thread, time};
-        let mut log = Logger::new();
+        let log = Logger::new();
         //log.set_message_flushing(true) ;
         log.logm(Some(Domain::App), Level::Warning, "test1");
         log.logm(Some(Domain::App), Level::Warning, "test2");
