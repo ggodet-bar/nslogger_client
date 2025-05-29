@@ -34,9 +34,14 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs::File, io::Read, path::Path};
+
     use tempfile::NamedTempFile;
 
-    use crate::nslogger::{Domain, Level, Logger};
+    use crate::nslogger::{
+        Domain, Level, LogMessage, LogMessageType, Logger, MessagePartKey, MessagePartType,
+        SEQUENCE_NB_OFFSET,
+    };
 
     #[test]
     fn connects_via_bonjour_with_ssl() {
@@ -94,17 +99,86 @@ mod tests {
     #[test]
     fn logs_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
-
+        let file_path = tempfile.into_temp_path();
         let log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
-        log.set_log_file_path(tempfile.into_temp_path().to_str().unwrap())
+        log.set_log_file_path(file_path.to_str().unwrap())
             .expect("setting file path"); // File extension is constrained!!
-        log.logm(Some(Domain::App), Level::Warning, "message logged to file");
+        let first_msg = "message logged to file";
+        log.logm(Some(Domain::App), Level::Warning, first_msg);
         log.logm(
             Some(Domain::DB),
             Level::Warning,
             "other message logged to file",
         );
+
+        let mut file = File::open(file_path).expect("file should exist");
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).expect("file read");
+        /*
+         * First message should be a client info.
+         */
+        assert!(buf.len() > 14);
+        let msg_size = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
+        assert!(buf.len() > msg_size + 4);
+        assert_eq!(MessagePartKey::MessageType as u8, buf[6]);
+        assert_eq!(MessagePartType::Int32 as u8, buf[7]);
+        let msg_type = u32::from_be_bytes(buf[8..12].try_into().unwrap());
+        assert_eq!(LogMessageType::ClientInfo as u32, msg_type);
+        assert_eq!(
+            0,
+            u32::from_be_bytes(
+                buf[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
+                    .try_into()
+                    .unwrap()
+            )
+        );
+        /*
+         * Second message should be a plain log message.
+         */
+        let next_msg_idx = msg_size + 4;
+        let next_msg_size =
+            u32::from_be_bytes(buf[next_msg_idx..(next_msg_idx + 4)].try_into().unwrap()) as usize;
+        let msg_type = u32::from_be_bytes(
+            buf[(next_msg_idx + 8)..(next_msg_idx + 12)]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(LogMessageType::Log as u32, msg_type);
+        assert_eq!(
+            1,
+            u32::from_be_bytes(
+                buf[(next_msg_idx + SEQUENCE_NB_OFFSET)..(next_msg_idx + SEQUENCE_NB_OFFSET + 4)]
+                    .try_into()
+                    .unwrap()
+            )
+        );
+        let msg_string_idx = next_msg_idx + next_msg_size + 4 - first_msg.len();
+        let msg =
+            String::from_utf8(buf[msg_string_idx..(msg_string_idx + first_msg.len())].to_vec())
+                .expect("a valid string");
+        assert_eq!(first_msg, msg);
+        /*
+         * Last log message should be yet another plain log message.
+         */
+        let last_msg_idx = next_msg_idx + next_msg_size + 4;
+        let last_msg_size =
+            u32::from_be_bytes(buf[last_msg_idx..(last_msg_idx + 4)].try_into().unwrap()) as usize;
+        let msg_type = u32::from_be_bytes(
+            buf[(last_msg_idx + 8)..(last_msg_idx + 12)]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(LogMessageType::Log as u32, msg_type);
+        assert_eq!(
+            2,
+            u32::from_be_bytes(
+                buf[(last_msg_idx + SEQUENCE_NB_OFFSET)..(last_msg_idx + SEQUENCE_NB_OFFSET + 4)]
+                    .try_into()
+                    .unwrap()
+            )
+        );
+        assert_eq!(last_msg_idx + last_msg_size + 4, buf.len());
     }
 
     #[test]
@@ -165,7 +239,8 @@ mod tests {
     #[test]
     fn logs_mark() {
         let log = Logger::new().expect("logger instance");
-        log.set_remote_host("127.0.0.1", 50000, true);
+        log.set_remote_host("127.0.0.1", 50000, true)
+            .expect("setting host");
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warning, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");

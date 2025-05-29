@@ -198,39 +198,12 @@ impl LoggerState {
     }
 
     fn push_client_info_to_front_of_queue(&mut self) {
-        use std::{env, ffi::OsStr, path::Path};
-
-        use sys_info;
-
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "pushing client info to front of queue");
         }
 
-        let mut message = LogMessage::new(LogMessageType::ClientInfo);
-
-        match sys_info::os_type() {
-            Ok(_) => {
-                match sys_info::os_release() {
-                    Ok(release) => message.add_string(MessagePartKey::OsVersion, &release),
-                    _ => (),
-                };
-            }
-            _ => (),
-        };
-
-        let process_name = env::current_exe()
-            .ok()
-            .as_ref()
-            .map(Path::new)
-            .and_then(Path::file_name)
-            .and_then(OsStr::to_str)
-            .map(String::from);
-
-        if process_name.is_some() {
-            message.add_string(MessagePartKey::ClientName, &process_name.unwrap());
-        }
-
-        self.log_messages.push_front((message, None));
+        self.log_messages
+            .push_front((LogMessage::client_info(), None));
         self.is_client_info_added = true;
     }
 
@@ -497,7 +470,7 @@ impl LoggerState {
                     log::info!(target:"NSLogger", "processing message {}", &message.sequence_number);
                 }
 
-                let message_vec = message.get_bytes();
+                let message_vec = message.to_bytes();
                 let length = message_vec.len();
 
                 {

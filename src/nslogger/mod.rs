@@ -28,9 +28,10 @@ mod message_handler;
 mod message_worker;
 mod network_manager;
 
-// Exports Level & Domain as part of the public interface
 pub use self::log_message::{Domain, Level};
-use self::{
+#[cfg(test)]
+pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
+pub(crate) use self::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
     logger_state::{LoggerState, Message},
     message_worker::MessageWorker,
@@ -65,7 +66,6 @@ bitflags! {
         const FLUSH_EACH_MESSAGE   = 0b00000001;
         const BROWSE_BONJOUR       = 0b00000010;
         const USE_SSL              = 0b00000100;
-        const ROUTE_TO_LOGCAT      = 0b00001000;
     }
 }
 

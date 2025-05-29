@@ -1,9 +1,10 @@
-use std::{fmt, path::Path, str::FromStr, thread, time};
+use std::{env, ffi::OsStr, fmt, path::Path, str::FromStr, thread, time};
 
-use byteorder::{NetworkEndian, WriteBytesExt};
+use byteorder::{BigEndian, WriteBytesExt};
 use log;
+use sys_info;
 
-pub const SEQUENCE_NB_OFFSET: usize = 8;
+pub const SEQUENCE_NB_OFFSET: usize = 14;
 
 #[derive(Debug, PartialEq)]
 pub enum Domain {
@@ -75,6 +76,7 @@ impl Level {
 }
 
 #[derive(Copy, Clone)]
+#[repr(u8)]
 pub enum MessagePartKey {
     MessageType = 0,
     TimestampS = 1, // "seconds" component of timestamp
@@ -107,7 +109,8 @@ pub enum MessagePartKey {
 }
 
 #[derive(Copy, Clone)]
-enum MessagePartType {
+#[repr(u8)]
+pub(crate) enum MessagePartType {
     String = 0, // Strings are stored as UTF-8 data
     Binary = 1, // A block of binary data
     Int16 = 2,
@@ -117,7 +120,8 @@ enum MessagePartType {
 }
 
 #[derive(Copy, Clone)]
-pub enum LogMessageType {
+#[repr(u32)]
+pub(crate) enum LogMessageType {
     Log = 0,    // A standard log message
     BlockStart, // The start of a "block" (a group of log entries)
     BlockEnd,   // The end of the last started "block"
@@ -130,24 +134,57 @@ pub enum LogMessageType {
 pub struct LogMessage {
     pub sequence_number: u32,
     pub data: Vec<u8>,
-    data_used: u32,
     part_count: u16,
 }
 
-impl LogMessage {
-    pub fn new(message_type: LogMessageType) -> LogMessage {
-        let mut new_message = LogMessage {
+impl Default for LogMessage {
+    fn default() -> Self {
+        Self {
             sequence_number: 0,
-            data: Vec::with_capacity(256),
-            data_used: 6,
             part_count: 0,
-        };
+            data: Vec::with_capacity(512),
+        }
+    }
+}
 
+impl LogMessage {
+    pub fn client_info() -> LogMessage {
+        let mut message = LogMessage::new(LogMessageType::ClientInfo);
+
+        if let Ok(os_type) = sys_info::os_type() {
+            message.add_string(MessagePartKey::OsName, &os_type);
+        };
+        if let Ok(os_release) = sys_info::os_release() {
+            message.add_string(MessagePartKey::OsVersion, &os_release);
+        }
+        let process_name = env::current_exe()
+            .ok()
+            .as_ref()
+            .map(Path::new)
+            .and_then(Path::file_name)
+            .and_then(OsStr::to_str)
+            .map(String::from);
+
+        if let Some(name) = process_name {
+            message.add_string(MessagePartKey::ClientName, &name);
+        }
+
+        message
+    }
+
+    pub fn new(message_type: LogMessageType) -> LogMessage {
+        let mut new_message = LogMessage::default();
+        /*
+         * Reserve 6 bytes for the message header.
+         */
+        new_message.data.extend_from_slice(&[0_u8; 6]);
+        /*
+         * Message descriptor.
+         */
         new_message.add_int32(MessagePartKey::MessageType, message_type as u32);
         new_message.add_int32(MessagePartKey::MessageSeq, 0);
-        new_message.add_timestamp(0);
+        new_message.add_timestamp(None);
         new_message.add_thread_id(thread::current());
-
         new_message
     }
 
@@ -188,26 +225,23 @@ impl LogMessage {
     }
 
     pub fn add_int64(&mut self, key: MessagePartKey, value: u64) {
-        self.data_used += 10;
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int64 as u8).unwrap();
-        self.data.write_u64::<NetworkEndian>(value as u64).unwrap();
+        self.data.write_u64::<BigEndian>(value as u64).unwrap();
         self.part_count += 1;
     }
 
     pub fn add_int32(&mut self, key: MessagePartKey, value: u32) {
-        self.data_used += 6;
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int32 as u8).unwrap();
-        self.data.write_u32::<NetworkEndian>(value as u32).unwrap();
+        self.data.write_u32::<BigEndian>(value as u32).unwrap();
         self.part_count += 1;
     }
 
     pub fn add_int16(&mut self, key: MessagePartKey, value: u16) {
-        self.data_used += 4;
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int16 as u8).unwrap();
-        self.data.write_u16::<NetworkEndian>(value as u16).unwrap();
+        self.data.write_u16::<BigEndian>(value as u16).unwrap();
         self.part_count += 1;
     }
 
@@ -221,10 +255,9 @@ impl LogMessage {
 
     fn add_bytes(&mut self, key: MessagePartKey, data_type: MessagePartType, bytes: &[u8]) {
         let length = bytes.len();
-        self.data_used += (6 + length) as u32;
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(data_type as u8).unwrap();
-        self.data.write_u32::<NetworkEndian>(length as u32).unwrap();
+        self.data.write_u32::<BigEndian>(length as u32).unwrap();
         self.data.extend_from_slice(bytes);
         self.part_count += 1;
     }
@@ -233,41 +266,50 @@ impl LogMessage {
         self.add_bytes(key, MessagePartType::String, string.as_bytes());
     }
 
-    fn add_timestamp(&mut self, value: u64) {
-        let actual_value = if value == 0 {
-            let time = time::SystemTime::now()
+    fn add_timestamp(&mut self, value: Option<u64>) {
+        let value = value.unwrap_or_else(|| {
+            time::SystemTime::now()
                 .duration_since(time::UNIX_EPOCH)
-                .expect("Time went backward");
-            (time.as_secs() * 1000 + time.subsec_nanos() as u64 / 1_000_000) as u64
-        } else {
-            value
-        };
-
-        self.add_int64(MessagePartKey::TimestampS, actual_value / 1000);
-        self.add_int16(MessagePartKey::TimestampMs, (actual_value % 1000) as u16);
+                .unwrap()
+                .as_millis() as u64
+        });
+        self.add_int64(MessagePartKey::TimestampS, value / 1000);
+        self.add_int16(MessagePartKey::TimestampMs, (value % 1000) as u16);
     }
 
     fn add_thread_id(&mut self, thread: thread::Thread) {
-        let thread_name = match thread.name() {
-            Some(name) => name.to_string(),
-            None => format!("{:?}", thread.id()),
-        };
-
+        let thread_name = thread
+            .name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("{:?}", thread.id()));
         self.add_string(MessagePartKey::ThreadId, &thread_name);
     }
 
-    pub fn get_bytes(&self) -> Vec<u8> {
-        let mut header = Vec::with_capacity(6 + self.data.len());
-        let size = self.data_used - 4;
-        header.write_u32::<NetworkEndian>(size);
-        header.write_u16::<NetworkEndian>(self.part_count);
+    pub fn to_bytes(mut self) -> Vec<u8> {
+        let size = self.data.len() as u32 - 4;
+        let data_slice = self.data.as_mut_slice();
+        data_slice[..4].copy_from_slice(&size.to_be_bytes());
+        data_slice[4..6].copy_from_slice(&self.part_count.to_be_bytes());
+        self.data
+    }
+}
 
-        if self.data_used == self.data.len() as u32 {
-            return self.data.clone();
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        header.extend_from_slice(&self.data);
-
-        return header;
+    #[test]
+    fn smallest_message() {
+        let thread_name_len = std::thread::current().name().unwrap().len();
+        let msg = LogMessage::new(LogMessageType::Log);
+        assert_eq!(5, msg.part_count);
+        assert_eq!(38 + thread_name_len, msg.data.len());
+        let bytes = msg.to_bytes();
+        assert_eq!(
+            34 + thread_name_len as u32,
+            u32::from_be_bytes(bytes[0..4].try_into().unwrap())
+        );
+        assert_eq!(5, u16::from_be_bytes(bytes[4..6].try_into().unwrap()));
+        assert_eq!(38 + thread_name_len, bytes.len());
     }
 }

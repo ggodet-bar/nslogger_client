@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use log::log;
 use tokio::sync::mpsc;
 
-use super::log_message::SEQUENCE_NB_OFFSET;
 use crate::nslogger::{
+    log_message::SEQUENCE_NB_OFFSET,
     logger_state::{LoggerState, Message},
     Signal, DEBUG_LOGGER,
 };
@@ -22,8 +22,12 @@ impl MessageHandler {
         shared_state: Arc<Mutex<LoggerState>>,
         ready_signal: Signal,
     ) -> MessageHandler {
+        /*
+         * NOTE the handler won't process the client info message, hence the very first message
+         * is skipped.
+         */
         MessageHandler {
-            sequence_generator: 0,
+            sequence_generator: 1,
             message_rx,
             shared_state,
             ready_signal,
@@ -52,7 +56,7 @@ impl MessageHandler {
                      */
                     message.sequence_number = self.sequence_generator;
                     message.data[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
-                        .copy_from_slice(&self.sequence_generator.to_ne_bytes());
+                        .copy_from_slice(&self.sequence_generator.to_be_bytes());
                     self.sequence_generator += 1;
                     if DEBUG_LOGGER {
                         log::info!(target:"NSLogger", "adding log {} to the queue", message.sequence_number);
