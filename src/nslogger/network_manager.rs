@@ -7,7 +7,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::nslogger::{logger_state::HandlerMessageType, DEBUG_LOGGER};
+use crate::nslogger::{logger_state::Message, DEBUG_LOGGER};
 
 pub trait BonjourService {
     async fn setup_bonjour<T: BonjourService>(
@@ -16,7 +16,7 @@ pub trait BonjourService {
     ) -> io::Result<BonjourServiceStatus>;
 }
 
-pub enum NetworkActionMessage {
+pub enum Command {
     SetupBonjour(String),
     Quit,
 }
@@ -28,37 +28,38 @@ pub enum BonjourServiceStatus {
 }
 
 pub struct NetworkManager<T: BonjourService> {
-    action_receiver: mpsc::UnboundedReceiver<NetworkActionMessage>,
-    message_sender: mpsc::UnboundedSender<HandlerMessageType>,
+    command_rx: mpsc::UnboundedReceiver<Command>,
+    message_tx: mpsc::UnboundedSender<Message>,
 
     bonjour_service: T,
 }
 
 impl<T: BonjourService> NetworkManager<T> {
     pub fn new(
-        action_receiver: mpsc::UnboundedReceiver<NetworkActionMessage>,
-        message_sender: mpsc::UnboundedSender<HandlerMessageType>,
+        command_rx: mpsc::UnboundedReceiver<Command>,
+        message_tx: mpsc::UnboundedSender<Message>,
         bonjour_service: T,
     ) -> NetworkManager<T> {
         NetworkManager {
-            action_receiver,
-            message_sender,
+            command_rx,
+            message_tx,
 
             bonjour_service,
         }
     }
+
     pub async fn run(&mut self) -> io::Result<()> {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "starting network manager");
         }
 
-        while let Some(message) = &self.action_receiver.recv().await {
+        while let Some(message) = &self.command_rx.recv().await {
             if DEBUG_LOGGER {
                 log::info!(target:"NSLogger", "network manager received message");
             }
 
             match message {
-                NetworkActionMessage::SetupBonjour(service_name) => {
+                Command::SetupBonjour(service_name) => {
                     let mut is_connected = false;
                     while !is_connected {
                         match self
@@ -71,12 +72,11 @@ impl<T: BonjourService> NetworkManager<T> {
                                 host,
                                 port,
                             ) => {
-                                self.message_sender
-                                    .send(HandlerMessageType::TryConnectBonjour(
-                                        bonjour_service_name,
-                                        host,
-                                        port,
-                                    ));
+                                self.message_tx.send(Message::TryConnectBonjour(
+                                    bonjour_service_name,
+                                    host,
+                                    port,
+                                ));
                                 is_connected = true;
                             }
                             _ => {
@@ -89,7 +89,7 @@ impl<T: BonjourService> NetworkManager<T> {
                         }
                     }
                 }
-                NetworkActionMessage::Quit => {
+                Command::Quit => {
                     if DEBUG_LOGGER {
                         log::info!(target:"NSLogger", "properly exiting the network manager");
                     }

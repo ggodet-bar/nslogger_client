@@ -1,13 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs::File,
     io,
     io::{BufWriter, Write},
     net::TcpStream,
     path::PathBuf,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{Arc, Mutex},
     thread,
-    thread::Thread,
 };
 
 use log::log;
@@ -19,15 +18,16 @@ use tokio::sync::mpsc;
 
 use crate::nslogger::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
-    network_manager, LoggerOptions, DEBUG_LOGGER,
+    network_manager,
+    network_manager::Command,
+    Error, LoggerOptions, MessageWorker, Signal, DEBUG_LOGGER,
 };
 
 #[derive(Debug)]
-pub enum HandlerMessageType {
+pub enum Message {
     TryConnect,
     TryConnectBonjour(String, String, u16),
-    ConnectComplete,
-    AddLog(LogMessage),
+    AddLog(LogMessage, Option<Signal>),
     OptionChange(HashMap<String, String>),
     Quit,
 }
@@ -39,27 +39,25 @@ pub enum WriteStreamWrapper {
     File(BufWriter<File>),
 }
 
-impl WriteStreamWrapper {
-    pub fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.unwrap().write_all(buf)
+impl std::io::Write for WriteStreamWrapper {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            WriteStreamWrapper::Tcp(stream) => stream.write(buf),
+            WriteStreamWrapper::Ssl(stream) => stream.write(buf),
+            WriteStreamWrapper::File(stream) => stream.write(buf),
+        }
     }
 
-    pub fn flush(&mut self) -> io::Result<()> {
-        self.unwrap().flush()
-    }
-
-    fn unwrap(&mut self) -> &mut dyn Write {
-        match *self {
-            WriteStreamWrapper::Tcp(ref mut stream) => stream,
-            WriteStreamWrapper::Ssl(ref mut stream) => stream,
-            WriteStreamWrapper::File(ref mut stream) => stream,
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            WriteStreamWrapper::Tcp(stream) => stream.flush(),
+            WriteStreamWrapper::Ssl(stream) => stream.flush(),
+            WriteStreamWrapper::File(stream) => stream.flush(),
         }
     }
 }
 
 pub struct LoggerState {
-    pub ready: bool,
-    pub ready_waiters: Vec<Thread>,
     pub options: LoggerOptions,
     pub is_reconnection_scheduled: bool,
     pub is_connecting: bool,
@@ -76,27 +74,24 @@ pub struct LoggerState {
 
     /// file or socket output stream
     //pub write_stream:Option<Write + 'static:std::marker::Sized>,
-    next_sequence_numbers: AtomicU32,
-    pub log_messages: Vec<LogMessage>,
-    message_sender: mpsc::UnboundedSender<HandlerMessageType>,
-    pub message_receiver: Option<mpsc::UnboundedReceiver<HandlerMessageType>>,
+    pub log_messages: VecDeque<(LogMessage, Option<Signal>)>,
+    message_tx: mpsc::UnboundedSender<Message>,
 
     pub log_file_path: Option<PathBuf>,
 
-    action_sender: mpsc::UnboundedSender<network_manager::NetworkActionMessage>,
-    action_receiver: Option<mpsc::UnboundedReceiver<network_manager::NetworkActionMessage>>,
+    command_tx: mpsc::UnboundedSender<network_manager::Command>,
 }
 
 impl LoggerState {
     pub fn new(
-        message_sender: mpsc::UnboundedSender<HandlerMessageType>,
-        message_receiver: mpsc::UnboundedReceiver<HandlerMessageType>,
-    ) -> LoggerState {
-        let (action_sender, action_receiver) = mpsc::unbounded_channel();
+        message_tx: mpsc::UnboundedSender<Message>,
+        message_rx: mpsc::UnboundedReceiver<Message>,
+        ready_signal: Signal,
+    ) -> Arc<Mutex<Self>> {
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
 
-        LoggerState {
+        let state = LoggerState {
             options: LoggerOptions::BROWSE_BONJOUR | LoggerOptions::USE_SSL,
-            ready_waiters: vec![],
             bonjour_service_type: None,
             bonjour_service_name: None,
             remote_host: None,
@@ -106,17 +101,16 @@ impl LoggerState {
             is_connecting: false,
             is_connected: false,
             is_handler_running: false,
-            ready: false,
             is_client_info_added: false,
-            next_sequence_numbers: AtomicU32::new(0),
-            log_messages: vec![],
-            message_sender,
-            message_receiver: Some(message_receiver),
+            log_messages: VecDeque::new(),
+            message_tx: message_tx.clone(),
             log_file_path: None,
-
-            action_sender,
-            action_receiver: Some(action_receiver),
-        }
+            command_tx,
+        };
+        Self::setup_network_manager(message_tx, command_rx);
+        let state = Arc::new(Mutex::new(state));
+        Self::setup_message_worker(state.clone(), message_rx, ready_signal);
+        state
     }
 
     pub fn process_log_queue(&mut self) {
@@ -131,8 +125,6 @@ impl LoggerState {
             log::info!(target:"NSLogger", "process_log_queue");
         }
 
-        self.setup_network_manager_if_required();
-
         if !self.is_client_info_added {
             self.push_client_info_to_front_of_queue();
         }
@@ -142,7 +134,7 @@ impl LoggerState {
                 self.create_buffer_write_stream();
             } else if !(self.is_connecting
                 || self.is_reconnection_scheduled
-                || !(self.options & LoggerOptions::BROWSE_BONJOUR).is_empty())
+                || self.options.contains(LoggerOptions::BROWSE_BONJOUR))
             {
                 if self.remote_host.is_some() && self.remote_port.is_some() {
                     self.connect_to_remote();
@@ -150,8 +142,6 @@ impl LoggerState {
                     self.setup_bonjour();
                 }
             }
-
-            return;
         }
 
         if self.remote_host.is_none() {
@@ -173,23 +163,35 @@ impl LoggerState {
         }
     }
 
-    fn setup_network_manager_if_required(&mut self) {
-        if self.action_receiver.is_none() {
-            return;
-        }
-
-        let action_receiver = self.action_receiver.take().unwrap();
-        let message_sender = self.message_sender.clone();
-
-        tokio::task::spawn(async move {
+    fn setup_network_manager(
+        message_tx: mpsc::UnboundedSender<Message>,
+        command_rx: mpsc::UnboundedReceiver<Command>,
+    ) -> Result<(), Error> {
+        let runtime = tokio::runtime::Builder::new_multi_thread().build()?;
+        runtime.spawn(async move {
             network_manager::NetworkManager::new(
-                action_receiver,
-                message_sender,
+                command_rx,
+                message_tx,
                 network_manager::DefaultBonjourService::default(),
             )
             .run()
-            .await;
+            .await
         });
+        Ok(())
+    }
+
+    fn setup_message_worker(
+        state: Arc<Mutex<LoggerState>>,
+        message_rx: mpsc::UnboundedReceiver<Message>,
+        ready_signal: Signal,
+    ) -> Result<(), Error> {
+        let runtime = tokio::runtime::Builder::new_multi_thread().build()?;
+        runtime.spawn(async {
+            MessageWorker::new(state, message_rx, ready_signal)
+                .run()
+                .await
+        });
+        Ok(())
     }
 
     fn push_client_info_to_front_of_queue(&mut self) {
@@ -201,10 +203,7 @@ impl LoggerState {
             log::info!(target:"NSLogger", "pushing client info to front of queue");
         }
 
-        let mut message = LogMessage::new(
-            LogMessageType::ClientInfo,
-            self.get_and_increment_sequence_number(),
-        );
+        let mut message = LogMessage::new(LogMessageType::ClientInfo);
 
         match sys_info::os_type() {
             Ok(_) => {
@@ -228,7 +227,7 @@ impl LoggerState {
             message.add_string(MessagePartKey::ClientName, &process_name.unwrap());
         }
 
-        self.log_messages.insert(0, message);
+        self.log_messages.push_front((message, None));
         self.is_client_info_added = true;
     }
 
@@ -307,29 +306,26 @@ impl LoggerState {
         };
     }
 
-    pub fn setup_bonjour(&mut self) -> io::Result<()> {
-        if (self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
+    pub fn setup_bonjour(&mut self) {
+        if !self.options.contains(LoggerOptions::BROWSE_BONJOUR) {
             self.close_bonjour();
-        } else {
-            if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "Setting up Bonjour");
-            }
-
-            let service_type = if (self.options & LoggerOptions::USE_SSL).is_empty() {
-                "_nslogger._tcp"
-            } else {
-                "_nslogger-ssl._tcp"
-            };
-
-            self.bonjour_service_type = Some(service_type.to_string());
-
-            self.action_sender
-                .send(network_manager::NetworkActionMessage::SetupBonjour(
-                    service_type.to_string(),
-                ));
+            return;
+        }
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "Setting up Bonjour");
         }
 
-        Ok(())
+        let service_type = if (self.options & LoggerOptions::USE_SSL).is_empty() {
+            "_nslogger._tcp"
+        } else {
+            "_nslogger-ssl._tcp"
+        };
+
+        self.bonjour_service_type = Some(service_type.to_string());
+
+        self.command_tx.send(network_manager::Command::SetupBonjour(
+            service_type.to_string(),
+        ));
     }
 
     pub fn close_bonjour(&mut self) {
@@ -380,8 +376,10 @@ impl LoggerState {
             }
         }
 
-        self.message_sender
-            .send(HandlerMessageType::ConnectComplete);
+        self.is_connecting = false;
+        self.is_connected = true;
+
+        self.process_log_queue();
 
         Ok(())
     }
@@ -424,7 +422,7 @@ impl LoggerState {
             self.is_reconnection_scheduled = true;
             // FIXME Should send with 2s delay. Should probably go through the networking thread
             // for handling the reconnect
-            self.message_sender.send(HandlerMessageType::TryConnect);
+            self.message_tx.send(Message::TryConnect);
         }
     }
 
@@ -462,10 +460,6 @@ impl LoggerState {
         // otherwise the viewer window won't ever open!
     }
 
-    pub fn get_and_increment_sequence_number(&mut self) -> u32 {
-        return self.next_sequence_numbers.fetch_add(1, Ordering::SeqCst);
-    }
-
     /// Write outstanding messages to the buffer file
     pub fn flush_queue_to_buffer_stream(&mut self) {
         if DEBUG_LOGGER {
@@ -489,42 +483,32 @@ impl LoggerState {
         };
     }
 
-    fn do_write_messages_to_stream(&mut self) -> io::Result<()> {
+    fn do_write_messages_to_stream(&mut self) -> Result<(), Error> {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len());
         }
 
-        while !self.log_messages.is_empty() {
+        while let Some((message, signal)) = self.log_messages.pop_front() {
             {
-                let message = self.log_messages.first().unwrap();
                 if DEBUG_LOGGER {
                     log::info!(target:"NSLogger", "processing message {}", &message.sequence_number);
                 }
 
                 let message_vec = message.get_bytes();
-                let message_bytes = message_vec.as_slice();
-                let length = message_bytes.len();
+                let length = message_vec.len();
                 if DEBUG_LOGGER {
-                    use std::cmp;
-                    if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "Writing to {:?}", self.write_stream.as_ref().unwrap());
-                        log::info!(target:"NSLogger", "length: {}", length);
-                        log::info!(target:"NSLogger", "bytes: {:?}", &message_bytes[0..cmp::min(length, 40)]);
-                    }
+                    log::info!(target:"NSLogger", "Writing to {:?} (len: {length})", self.write_stream.as_ref().unwrap());
                 }
 
                 {
                     let tcp_stream = self.write_stream.as_mut().unwrap();
-                    tcp_stream.write_all(message_bytes)?;
-                }
-
-                match message.flush_rx {
-                    None => message.flush_tx.send(true).unwrap(),
-                    _ => (),
+                    tcp_stream.write_all(&message_vec)?;
+                    if let Some(signal) = signal {
+                        tcp_stream.flush()?;
+                        signal.signal();
+                    }
                 }
             }
-
-            self.log_messages.remove(0);
         }
 
         Ok(())
@@ -537,7 +521,6 @@ impl Drop for LoggerState {
             log::info!(target:"NSLogger", "calling drop for logger state");
         }
         self.disconnect_from_remote();
-        self.action_sender
-            .send(network_manager::NetworkActionMessage::Quit);
+        self.command_tx.send(network_manager::Command::Quit);
     }
 }

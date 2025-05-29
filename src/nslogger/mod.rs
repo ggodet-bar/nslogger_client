@@ -3,13 +3,11 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
     sync::{Arc, Condvar, Mutex},
-    thread,
-    thread::spawn,
-    time::Duration,
 };
 
 use bitflags::bitflags;
 use cfg_if::cfg_if;
+use chrono;
 use log::log;
 use tokio::sync::mpsc;
 
@@ -34,9 +32,31 @@ mod network_manager;
 pub use self::log_message::{Domain, Level};
 use self::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
-    logger_state::{HandlerMessageType, LoggerState},
+    logger_state::{LoggerState, Message},
     message_worker::MessageWorker,
 };
+
+#[derive(Debug, Clone, Default)]
+pub struct Signal(Arc<(Mutex<bool>, Condvar)>);
+
+impl Signal {
+    pub fn wait(&self) {
+        let mut ready = self.0 .0.lock().unwrap();
+        while !*ready {
+            ready = self.0 .1.wait(ready).unwrap();
+        }
+    }
+
+    pub fn signal(&self) {
+        let mut ready = self.0 .0.lock().unwrap();
+        *ready = true;
+        self.0 .1.notify_all();
+    }
+
+    pub fn is_triggered(&self) -> bool {
+        *self.0 .0.lock().unwrap()
+    }
+}
 
 bitflags! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,10 +69,18 @@ bitflags! {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("channel was closed or end was dropped")]
+    ClosedChannel,
+    #[error("IO error")]
+    IO(#[from] std::io::Error),
+}
+
 pub struct Logger {
     shared_state: Arc<Mutex<LoggerState>>,
-    ready_cvar: Arc<Condvar>,
-    message_sender: mpsc::UnboundedSender<HandlerMessageType>,
+    ready_signal: Signal,
+    message_tx: mpsc::UnboundedSender<Message>,
 }
 
 impl Logger {
@@ -75,13 +103,13 @@ impl Logger {
 
             init_test_logger();
         }
-        let (message_sender, message_receiver) = mpsc::unbounded_channel();
-        let sender_clone = message_sender.clone();
+        let (message_tx, message_rx) = mpsc::unbounded_channel();
+        let ready_signal = Signal::default();
 
         return Logger {
-            message_sender,
-            shared_state: Arc::new(Mutex::new(LoggerState::new(sender_clone, message_receiver))),
-            ready_cvar: Arc::new(Condvar::new()),
+            shared_state: LoggerState::new(message_tx.clone(), message_rx, ready_signal.clone()),
+            message_tx,
+            ready_signal,
         };
     }
 
@@ -90,8 +118,8 @@ impl Logger {
         service_type: Option<&str>,
         service_name: Option<&str>,
         use_ssl: bool,
-    ) {
-        if self.shared_state.lock().unwrap().ready {
+    ) -> Result<(), Error> {
+        if self.ready_signal.is_triggered() {
             let mut properties = HashMap::new();
 
             if let Some(name_value) = service_name {
@@ -107,8 +135,9 @@ impl Logger {
                 String::from(if use_ssl { "1" } else { "0" }),
             );
 
-            self.message_sender
-                .send(HandlerMessageType::OptionChange(properties));
+            self.message_tx
+                .send(Message::OptionChange(properties))
+                .map_err(|_| Error::ClosedChannel)?;
         } else {
             // Worker thread isn't yet setup
             let mut local_shared_state = self.shared_state.lock().unwrap();
@@ -124,14 +153,20 @@ impl Logger {
                 (*local_shared_state).options = local_shared_state.options - LoggerOptions::USE_SSL;
             }
         }
+        Ok(())
     }
 
-    pub fn set_remote_host(&mut self, host_name: &str, host_port: u16, use_ssl: bool) {
+    pub fn set_remote_host(
+        &mut self,
+        host_name: &str,
+        host_port: u16,
+        use_ssl: bool,
+    ) -> Result<(), Error> {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "set_remote_host host={} port={} use_ssl={}", host_name, host_port, use_ssl);
         }
 
-        if self.shared_state.lock().unwrap().ready {
+        if self.ready_signal.is_triggered() {
             let mut properties = HashMap::new();
             properties.insert("remote_host".to_string(), String::from(host_name));
             properties.insert(
@@ -143,8 +178,9 @@ impl Logger {
                 String::from(if use_ssl { "1" } else { "0" }),
             );
 
-            self.message_sender
-                .send(HandlerMessageType::OptionChange(properties));
+            self.message_tx
+                .send(Message::OptionChange(properties))
+                .map_err(|_| Error::ClosedChannel)?;
         } else {
             // Worker thread isn't yet setup
             let mut local_shared_state = self.shared_state.lock().unwrap();
@@ -157,23 +193,26 @@ impl Logger {
                 (*local_shared_state).options = local_shared_state.options - LoggerOptions::USE_SSL;
             }
         }
+        Ok(())
     }
 
-    pub fn set_log_file_path(&mut self, file_path: &str) {
+    pub fn set_log_file_path(&mut self, file_path: &str) -> Result<(), Error> {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "set_log_file_path path={:?}", file_path);
         }
 
-        if self.shared_state.lock().unwrap().ready {
+        if self.ready_signal.is_triggered() {
             let mut properties = HashMap::new();
             properties.insert("filename".to_string(), String::from(file_path));
 
-            self.message_sender
-                .send(HandlerMessageType::OptionChange(properties));
+            self.message_tx
+                .send(Message::OptionChange(properties))
+                .map_err(|_| Error::ClosedChannel)?;
         } else {
             self.shared_state.lock().unwrap().log_file_path =
                 Some(PathBuf::from(file_path.to_string()));
         }
+        Ok(())
     }
 
     pub fn set_message_flushing(&mut self, flush_each_message: bool) {
@@ -185,15 +224,7 @@ impl Logger {
         }
     }
 
-    pub fn logl(
-        &self,
-        filename: Option<&Path>,
-        line_number: Option<usize>,
-        method: Option<&str>,
-        domain: Option<Domain>,
-        level: Level,
-        message: &str,
-    ) {
+    fn inner_log(&self, log_message: LogMessage) {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "entering log");
         }
@@ -206,25 +237,31 @@ impl Logger {
             return;
         }
 
+        self.send_and_flush_if_required(log_message);
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "Exiting log");
+        }
+    }
+
+    pub fn logl(
+        &self,
+        filename: Option<&Path>,
+        line_number: Option<usize>,
+        method: Option<&str>,
+        domain: Option<Domain>,
+        level: Level,
+        message: &str,
+    ) {
         let mut log_message = LogMessage::with_header(
             LogMessageType::Log,
-            self.shared_state
-                .lock()
-                .unwrap()
-                .get_and_increment_sequence_number(),
             filename,
             line_number,
             method,
             domain,
             level,
         );
-
         log_message.add_string(MessagePartKey::Message, message);
-
-        self.send_and_flush_if_required(log_message);
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Exiting log");
-        }
+        self.inner_log(log_message);
     }
 
     pub fn logm(&self, domain: Option<Domain>, level: Level, message: &str) {
@@ -239,50 +276,16 @@ impl Logger {
     ///
     /// Marks are important points that you can jump to directly in the desktop viewer. Message is
     /// optional, if null or empty it will be replaced with the current date / time
-    ///
-    /// * `message`	optional message
     pub fn log_mark(&self, message: Option<&str>) {
-        use chrono;
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "entering log_mark");
-        }
-        self.start_logging_thread_if_needed();
-        if !self.shared_state.lock().unwrap().is_handler_running {
-            if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "Early return");
-            }
-            return;
-        }
+        let mut log_message =
+            LogMessage::with_header(LogMessageType::Mark, None, None, None, None, Level::Error);
 
-        let mut log_message = LogMessage::with_header(
-            LogMessageType::Mark,
-            self.shared_state
-                .lock()
-                .unwrap()
-                .get_and_increment_sequence_number(),
-            None,
-            None,
-            None,
-            None,
-            Level::Error,
-        );
-
-        let mark_message = match message {
-            Some(inner) => inner.to_string(),
-            None => {
-                let time_now = chrono::Utc::now();
-
-                time_now.format("%b %-d, %-I:%M:%S").to_string()
-            }
-        };
-
+        let mark_message = message.map(|msg| msg.to_string()).unwrap_or_else(|| {
+            let time_now = chrono::Utc::now();
+            time_now.format("%b %-d, %-I:%M:%S").to_string()
+        });
         log_message.add_string(MessagePartKey::Message, &mark_message);
-
-        self.send_and_flush_if_required(log_message);
-
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "leaving log_mark");
-        }
+        self.inner_log(log_message)
     }
 
     pub fn log_data(
@@ -294,38 +297,16 @@ impl Logger {
         level: Level,
         data: &[u8],
     ) {
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "entering log_data");
-        }
-
-        self.start_logging_thread_if_needed();
-        if !self.shared_state.lock().unwrap().is_handler_running {
-            if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "Early return");
-            }
-            return;
-        }
-
         let mut log_message = LogMessage::with_header(
             LogMessageType::Log,
-            self.shared_state
-                .lock()
-                .unwrap()
-                .get_and_increment_sequence_number(),
             filename,
             line_number,
             method,
             domain,
             level,
         );
-
         log_message.add_binary_data(MessagePartKey::Message, data);
-
-        self.send_and_flush_if_required(log_message);
-
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "leaving log_data");
-        }
+        self.inner_log(log_message)
     }
 
     pub fn log_image(
@@ -337,103 +318,52 @@ impl Logger {
         level: Level,
         data: &[u8],
     ) {
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "entering log_image");
-        }
-        self.start_logging_thread_if_needed();
-        if !self.shared_state.lock().unwrap().is_handler_running {
-            if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "Early return");
-            }
-            return;
-        }
-
         let mut log_message = LogMessage::with_header(
             LogMessageType::Log,
-            self.shared_state
-                .lock()
-                .unwrap()
-                .get_and_increment_sequence_number(),
             filename,
             line_number,
             method,
             domain,
             level,
         );
-
         log_message.add_image_data(MessagePartKey::Message, data);
-
-        self.send_and_flush_if_required(log_message);
-
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "leaving log_image");
-        }
+        self.inner_log(log_message);
     }
 
     fn start_logging_thread_if_needed(&self) {
-        let mut waiting = false;
-
-        {
-            let mut local_shared_state = self.shared_state.lock().unwrap();
-            if local_shared_state.message_receiver.is_some() {
-                local_shared_state.ready_waiters.push(thread::current());
-                waiting = true;
-
-                let cloned_state = Arc::clone(&self.shared_state);
-                let cloned_cvar = Arc::clone(&self.ready_cvar);
-                // NOTE: only clones the pointer reference, not the state itself
-
-                let receiver = local_shared_state.message_receiver.take().unwrap();
-                let sender = self.message_sender.clone();
-                spawn(move || {
-                    MessageWorker::new(cloned_state, cloned_cvar, sender, receiver).run();
-                });
-            }
-        }
-
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "Waiting for worker to be ready");
         }
 
-        while !self.shared_state.lock().unwrap().ready {
-            self.ready_cvar.wait_timeout(
-                self.shared_state.lock().unwrap(),
-                Duration::from_millis(100),
-            );
-
-            // We'll keep this loop around in case we find situations where we would need to
-            // interrupt the thread.
-        }
+        self.ready_signal.wait();
 
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "Worker is ready and running");
         }
     }
 
-    fn send_and_flush_if_required(&self, mut log_message: LogMessage) {
-        let needs_flush = !(self.shared_state.lock().unwrap().options
-            & LoggerOptions::FLUSH_EACH_MESSAGE)
-            .is_empty();
-        if DEBUG_LOGGER && !needs_flush {
-            log::warn!(target:"NSLogger", "no need to flush!!");
-        }
-        let mut flush_rx: Option<mpsc::UnboundedReceiver<bool>> = None;
-        if needs_flush {
-            flush_rx = log_message.flush_rx.take();
-        }
+    fn send_and_flush_if_required(&self, log_message: LogMessage) -> Result<(), Error> {
+        let needs_flush = self
+            .shared_state
+            .lock()
+            .unwrap()
+            .options
+            .contains(LoggerOptions::FLUSH_EACH_MESSAGE);
+        let flush_signal = needs_flush.then(|| Signal::default());
+        self.message_tx
+            .send(Message::AddLog(log_message, flush_signal.clone()));
 
-        self.message_sender
-            .send(HandlerMessageType::AddLog(log_message));
-
-        if needs_flush {
-            if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "waiting for message flush");
-            }
-            flush_rx.unwrap().recv();
-            if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "message flush ack received");
-            }
+        let Some(signal) = flush_signal else {
+            return Ok(());
+        };
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "waiting for message flush");
         }
+        signal.wait();
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "message flush ack received");
+        }
+        Ok(())
     }
 }
 
@@ -443,12 +373,12 @@ impl Drop for Logger {
             log::info!(target:"NSLogger", "calling drop for logger instance");
         }
 
-        self.message_sender.send(HandlerMessageType::Quit);
+        self.message_tx.send(Message::Quit);
     }
 }
 
 impl log::Log for Logger {
-    fn enabled(&self, metadata: &log::LogMetadata) -> bool {
+    fn enabled(&self, _: &log::LogMetadata) -> bool {
         true
     }
 

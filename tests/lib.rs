@@ -1,8 +1,7 @@
+use std::sync::Once;
+
 #[macro_use]
 extern crate log;
-extern crate nslogger;
-
-use std::sync::Once;
 
 static START: Once = Once::new();
 

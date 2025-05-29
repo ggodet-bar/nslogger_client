@@ -20,7 +20,8 @@ log = "0.3" # TODO UPDATE TO 0.4
 mio  = "0.6"
 openssl = "0.10"
 sys-info = "0.9"
-tokio = { version = "1.4", features = [ "macros", "time" ] }
+thiserror = "2.0"
+tokio = { version = "1.4", features = [ "macros", "rt", "rt-multi-thread", "time" ] }
 
 [dev-dependencies]
 env_logger = "*"

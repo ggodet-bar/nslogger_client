@@ -2,7 +2,8 @@ use std::{fmt, path::Path, str::FromStr, thread, time};
 
 use byteorder::{NetworkEndian, WriteBytesExt};
 use log;
-use tokio::sync::mpsc;
+
+pub const SEQUENCE_NB_OFFSET: usize = 8;
 
 #[derive(Debug, PartialEq)]
 pub enum Domain {
@@ -128,27 +129,22 @@ pub enum LogMessageType {
 #[derive(Debug)]
 pub struct LogMessage {
     pub sequence_number: u32,
-    data: Vec<u8>,
+    pub data: Vec<u8>,
     data_used: u32,
     part_count: u16,
-    pub flush_rx: Option<mpsc::UnboundedReceiver<bool>>,
-    pub flush_tx: mpsc::UnboundedSender<bool>,
 }
 
 impl LogMessage {
-    pub fn new(message_type: LogMessageType, sequence_number: u32) -> LogMessage {
-        let (flush_tx, flush_rx) = mpsc::unbounded_channel();
+    pub fn new(message_type: LogMessageType) -> LogMessage {
         let mut new_message = LogMessage {
-            sequence_number,
+            sequence_number: 0,
             data: Vec::with_capacity(256),
             data_used: 6,
             part_count: 0,
-            flush_rx: Some(flush_rx),
-            flush_tx,
         };
 
         new_message.add_int32(MessagePartKey::MessageType, message_type as u32);
-        new_message.add_int32(MessagePartKey::MessageSeq, sequence_number);
+        new_message.add_int32(MessagePartKey::MessageSeq, 0);
         new_message.add_timestamp(0);
         new_message.add_thread_id(thread::current());
 
@@ -157,14 +153,13 @@ impl LogMessage {
 
     pub fn with_header(
         message_type: LogMessageType,
-        sequence_number: u32,
         filename: Option<&Path>,
         line_number: Option<usize>,
         method: Option<&str>,
         domain: Option<Domain>,
         level: Level,
     ) -> LogMessage {
-        let mut new_message = LogMessage::new(message_type, sequence_number);
+        let mut new_message = LogMessage::new(message_type);
 
         new_message.add_int16(MessagePartKey::Level, level as u16);
 
