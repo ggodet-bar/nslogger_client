@@ -169,13 +169,9 @@ impl LoggerState {
     ) -> Result<(), Error> {
         let runtime = tokio::runtime::Builder::new_multi_thread().build()?;
         runtime.spawn(async move {
-            network_manager::NetworkManager::new(
-                command_rx,
-                message_tx,
-                network_manager::DefaultBonjourService::default(),
-            )
-            .run()
-            .await
+            network_manager::NetworkManager::new(command_rx, message_tx)
+                .run()
+                .await
         });
         Ok(())
     }

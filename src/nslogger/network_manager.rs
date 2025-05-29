@@ -9,13 +9,6 @@ use tokio::{
 
 use crate::nslogger::{logger_state::Message, DEBUG_LOGGER};
 
-pub trait BonjourService {
-    async fn setup_bonjour<T: BonjourService>(
-        &mut self,
-        service_name: &str,
-    ) -> io::Result<BonjourServiceStatus>;
-}
-
 pub enum Command {
     SetupBonjour(String),
     Quit,
@@ -27,24 +20,23 @@ pub enum BonjourServiceStatus {
     Unresolved,
 }
 
-pub struct NetworkManager<T: BonjourService> {
+pub struct NetworkManager {
     command_rx: mpsc::UnboundedReceiver<Command>,
     message_tx: mpsc::UnboundedSender<Message>,
 
-    bonjour_service: T,
+    bonjour_service: BonjourService,
 }
 
-impl<T: BonjourService> NetworkManager<T> {
+impl NetworkManager {
     pub fn new(
         command_rx: mpsc::UnboundedReceiver<Command>,
         message_tx: mpsc::UnboundedSender<Message>,
-        bonjour_service: T,
-    ) -> NetworkManager<T> {
+    ) -> NetworkManager {
         NetworkManager {
             command_rx,
             message_tx,
 
-            bonjour_service,
+            bonjour_service: BonjourService::default(),
         }
     }
 
@@ -62,11 +54,7 @@ impl<T: BonjourService> NetworkManager<T> {
                 Command::SetupBonjour(service_name) => {
                     let mut is_connected = false;
                     while !is_connected {
-                        match self
-                            .bonjour_service
-                            .setup_bonjour::<T>(&service_name)
-                            .await?
-                        {
+                        match self.bonjour_service.setup_bonjour(&service_name).await? {
                             BonjourServiceStatus::ServiceFound(
                                 bonjour_service_name,
                                 host,
@@ -107,13 +95,10 @@ impl<T: BonjourService> NetworkManager<T> {
 }
 
 #[derive(Default)]
-pub struct DefaultBonjourService;
+pub struct BonjourService;
 
-impl BonjourService for DefaultBonjourService {
-    async fn setup_bonjour<T: BonjourService>(
-        &mut self,
-        service_name: &str,
-    ) -> io::Result<BonjourServiceStatus> {
+impl BonjourService {
+    async fn setup_bonjour(&mut self, service_name: &str) -> io::Result<BonjourServiceStatus> {
         let mut service_browser = async_dnssd::browse(service_name);
         match timeout(Duration::from_secs(5), service_browser.next()).await {
             Ok(Some(Ok(browse_result))) => {
