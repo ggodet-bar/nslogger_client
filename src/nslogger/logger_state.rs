@@ -14,7 +14,10 @@ use openssl::{
     self,
     ssl::{SslConnector, SslMethod, SslStream},
 };
-use tokio::sync::mpsc;
+use tokio::{
+    runtime::{Builder, Runtime},
+    sync::mpsc,
+};
 
 use crate::nslogger::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
@@ -62,7 +65,6 @@ pub struct LoggerState {
     pub is_reconnection_scheduled: bool,
     pub is_connecting: bool,
     pub is_connected: bool,
-    pub is_handler_running: bool,
     pub is_client_info_added: bool,
     pub bonjour_service_type: Option<String>,
     pub bonjour_service_name: Option<String>,
@@ -80,6 +82,7 @@ pub struct LoggerState {
     pub log_file_path: Option<PathBuf>,
 
     command_tx: mpsc::UnboundedSender<network_manager::Command>,
+    runtime: Runtime,
 }
 
 impl LoggerState {
@@ -87,7 +90,7 @@ impl LoggerState {
         message_tx: mpsc::UnboundedSender<Message>,
         message_rx: mpsc::UnboundedReceiver<Message>,
         ready_signal: Signal,
-    ) -> Arc<Mutex<Self>> {
+    ) -> Result<Arc<Mutex<Self>>, Error> {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
 
         let state = LoggerState {
@@ -100,17 +103,20 @@ impl LoggerState {
             is_reconnection_scheduled: false,
             is_connecting: false,
             is_connected: false,
-            is_handler_running: false,
             is_client_info_added: false,
             log_messages: VecDeque::new(),
             message_tx: message_tx.clone(),
             log_file_path: None,
             command_tx,
+            runtime: Builder::new_multi_thread()
+                .enable_io()
+                .enable_time()
+                .build()?,
         };
-        Self::setup_network_manager(message_tx, command_rx);
+        Self::setup_network_manager(message_tx, command_rx, &state.runtime)?;
         let state = Arc::new(Mutex::new(state));
-        Self::setup_message_worker(state.clone(), message_rx, ready_signal);
-        state
+        Self::setup_message_worker(state.clone(), message_rx, ready_signal)?;
+        Ok(state)
     }
 
     pub fn process_log_queue(&mut self) {
@@ -166,8 +172,8 @@ impl LoggerState {
     fn setup_network_manager(
         message_tx: mpsc::UnboundedSender<Message>,
         command_rx: mpsc::UnboundedReceiver<Command>,
+        runtime: &Runtime,
     ) -> Result<(), Error> {
-        let runtime = tokio::runtime::Builder::new_multi_thread().build()?;
         runtime.spawn(async move {
             network_manager::NetworkManager::new(command_rx, message_tx)
                 .run()
@@ -181,7 +187,8 @@ impl LoggerState {
         message_rx: mpsc::UnboundedReceiver<Message>,
         ready_signal: Signal,
     ) -> Result<(), Error> {
-        let runtime = tokio::runtime::Builder::new_multi_thread().build()?;
+        let local_state = state.clone();
+        let runtime = &(*local_state.lock().unwrap()).runtime;
         runtime.spawn(async {
             MessageWorker::new(state, message_rx, ready_signal)
                 .run()
@@ -492,12 +499,12 @@ impl LoggerState {
 
                 let message_vec = message.get_bytes();
                 let length = message_vec.len();
-                if DEBUG_LOGGER {
-                    log::info!(target:"NSLogger", "Writing to {:?} (len: {length})", self.write_stream.as_ref().unwrap());
-                }
 
                 {
                     let tcp_stream = self.write_stream.as_mut().unwrap();
+                    if DEBUG_LOGGER {
+                        log::info!(target:"NSLogger", "Writing to {:?} (len: {length})", tcp_stream);
+                    }
                     tcp_stream.write_all(&message_vec)?;
                     if let Some(signal) = signal {
                         tcp_stream.flush()?;

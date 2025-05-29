@@ -17,13 +17,13 @@ pub struct MessageWorker {
 impl MessageWorker {
     pub fn new(
         logger_state: Arc<Mutex<LoggerState>>,
-        handler_receiver: mpsc::UnboundedReceiver<Message>,
+        message_rx: mpsc::UnboundedReceiver<Message>,
         ready_signal: Signal,
     ) -> MessageWorker {
         let state_clone = logger_state.clone();
         MessageWorker {
             shared_state: logger_state,
-            handler: MessageHandler::new(handler_receiver, state_clone, ready_signal),
+            handler: MessageHandler::new(message_rx, state_clone, ready_signal),
         }
     }
 

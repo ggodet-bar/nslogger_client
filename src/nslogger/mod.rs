@@ -11,7 +11,7 @@ use chrono;
 use log::log;
 use tokio::sync::mpsc;
 
-const DEBUG_LOGGER: bool = false & cfg!(test);
+const DEBUG_LOGGER: bool = true & cfg!(test);
 
 #[cfg(test)]
 use std::sync::Once;
@@ -72,7 +72,7 @@ bitflags! {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("channel was closed or end was dropped")]
-    ClosedChannel,
+    ChannelNotAvailable,
     #[error("IO error")]
     IO(#[from] std::io::Error),
 }
@@ -84,7 +84,7 @@ pub struct Logger {
 }
 
 impl Logger {
-    pub fn new() -> Logger {
+    pub fn new() -> Result<Logger, Error> {
         if DEBUG_LOGGER {
             cfg_if! {
                 if #[cfg(test)] {
@@ -106,15 +106,15 @@ impl Logger {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let ready_signal = Signal::default();
 
-        return Logger {
-            shared_state: LoggerState::new(message_tx.clone(), message_rx, ready_signal.clone()),
+        return Ok(Logger {
+            shared_state: LoggerState::new(message_tx.clone(), message_rx, ready_signal.clone())?,
             message_tx,
             ready_signal,
-        };
+        });
     }
 
     pub fn set_bonjour_service(
-        &mut self,
+        &self,
         service_type: Option<&str>,
         service_name: Option<&str>,
         use_ssl: bool,
@@ -137,7 +137,7 @@ impl Logger {
 
             self.message_tx
                 .send(Message::OptionChange(properties))
-                .map_err(|_| Error::ClosedChannel)?;
+                .map_err(|_| Error::ChannelNotAvailable)?;
         } else {
             // Worker thread isn't yet setup
             let mut local_shared_state = self.shared_state.lock().unwrap();
@@ -157,7 +157,7 @@ impl Logger {
     }
 
     pub fn set_remote_host(
-        &mut self,
+        &self,
         host_name: &str,
         host_port: u16,
         use_ssl: bool,
@@ -180,7 +180,7 @@ impl Logger {
 
             self.message_tx
                 .send(Message::OptionChange(properties))
-                .map_err(|_| Error::ClosedChannel)?;
+                .map_err(|_| Error::ChannelNotAvailable)?;
         } else {
             // Worker thread isn't yet setup
             let mut local_shared_state = self.shared_state.lock().unwrap();
@@ -196,7 +196,7 @@ impl Logger {
         Ok(())
     }
 
-    pub fn set_log_file_path(&mut self, file_path: &str) -> Result<(), Error> {
+    pub fn set_log_file_path(&self, file_path: &str) -> Result<(), Error> {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "set_log_file_path path={:?}", file_path);
         }
@@ -207,7 +207,7 @@ impl Logger {
 
             self.message_tx
                 .send(Message::OptionChange(properties))
-                .map_err(|_| Error::ClosedChannel)?;
+                .map_err(|_| Error::ChannelNotAvailable)?;
         } else {
             self.shared_state.lock().unwrap().log_file_path =
                 Some(PathBuf::from(file_path.to_string()));
@@ -215,7 +215,7 @@ impl Logger {
         Ok(())
     }
 
-    pub fn set_message_flushing(&mut self, flush_each_message: bool) {
+    pub fn set_message_flushing(&self, flush_each_message: bool) {
         let mut local_state = self.shared_state.lock().unwrap();
         if flush_each_message {
             local_state.options |= LoggerOptions::FLUSH_EACH_MESSAGE;
@@ -229,14 +229,6 @@ impl Logger {
             log::info!(target:"NSLogger", "entering log");
         }
         self.start_logging_thread_if_needed();
-
-        if !self.shared_state.lock().unwrap().is_handler_running {
-            if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "Early return");
-            }
-            return;
-        }
-
         self.send_and_flush_if_required(log_message);
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "Exiting log");
@@ -310,7 +302,7 @@ impl Logger {
     }
 
     pub fn log_image(
-        &mut self,
+        &self,
         filename: Option<&Path>,
         line_number: Option<usize>,
         method: Option<&str>,

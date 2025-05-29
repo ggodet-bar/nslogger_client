@@ -10,7 +10,7 @@ use crate::nslogger::{
 };
 
 pub struct MessageHandler {
-    channel_receiver: mpsc::UnboundedReceiver<Message>,
+    message_rx: mpsc::UnboundedReceiver<Message>,
     shared_state: Arc<Mutex<LoggerState>>,
     ready_signal: Signal,
     sequence_generator: u32,
@@ -18,13 +18,13 @@ pub struct MessageHandler {
 
 impl MessageHandler {
     pub fn new(
-        receiver: mpsc::UnboundedReceiver<Message>,
+        message_rx: mpsc::UnboundedReceiver<Message>,
         shared_state: Arc<Mutex<LoggerState>>,
         ready_signal: Signal,
     ) -> MessageHandler {
         MessageHandler {
-            channel_receiver: receiver,
             sequence_generator: 0,
+            message_rx,
             shared_state,
             ready_signal,
         }
@@ -34,9 +34,12 @@ impl MessageHandler {
         /*
          * We are ready to run. Unpark the waiting threads now
          */
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "Message handler ready");
+        }
         self.ready_signal.signal();
 
-        while let Some(message) = self.channel_receiver.recv().await {
+        while let Some(message) = self.message_rx.recv().await {
             if DEBUG_LOGGER {
                 log::info!(target:"NSLogger", "[{:?}] Received message", std::thread::current().id());
             }
