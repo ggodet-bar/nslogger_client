@@ -1,10 +1,10 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     fs::File,
     io,
     io::{BufWriter, Write},
     net::TcpStream,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
 };
@@ -20,19 +20,31 @@ use tokio::{
 };
 
 use crate::nslogger::{
-    log_message::{LogMessage, LogMessageType, MessagePartKey},
+    log_message::LogMessage,
     network_manager,
-    network_manager::Command,
-    Error, LoggerOptions, MessageWorker, Signal, DEBUG_LOGGER,
+    network_manager::{BonjourServiceType, Command},
+    Error, MessageWorker, Signal, DEBUG_LOGGER,
 };
 
 #[derive(Debug)]
 pub enum Message {
-    TryConnect,
-    TryConnectBonjour(String, String, u16),
+    TryConnectBonjour(String, String, u16, bool),
     AddLog(LogMessage, Option<Signal>),
-    OptionChange(HashMap<String, String>),
+    ConnectionModeChange(ConnectionMode),
     Quit,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConnectionMode {
+    Tcp(String, u16, bool),
+    Bonjour(BonjourServiceType),
+    File(PathBuf),
+}
+
+impl Default for ConnectionMode {
+    fn default() -> Self {
+        Self::Bonjour(BonjourServiceType::Default(true))
+    }
 }
 
 #[derive(Debug)]
@@ -61,26 +73,14 @@ impl std::io::Write for WriteStreamWrapper {
 }
 
 pub struct LoggerState {
-    pub options: LoggerOptions,
     pub is_reconnection_scheduled: bool,
     pub is_connecting: bool,
     pub is_connected: bool,
     pub is_client_info_added: bool,
-    pub bonjour_service_type: Option<String>,
-    pub bonjour_service_name: Option<String>,
-    /// the remote host we're talking to
-    pub remote_host: Option<String>,
-    pub remote_port: Option<u16>,
-
+    pub connection_mode: ConnectionMode,
     pub write_stream: Option<WriteStreamWrapper>,
-
-    /// file or socket output stream
-    //pub write_stream:Option<Write + 'static:std::marker::Sized>,
     pub log_messages: VecDeque<(LogMessage, Option<Signal>)>,
     message_tx: mpsc::UnboundedSender<Message>,
-
-    pub log_file_path: Option<PathBuf>,
-
     command_tx: mpsc::UnboundedSender<network_manager::Command>,
     runtime: Runtime,
 }
@@ -94,11 +94,7 @@ impl LoggerState {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
 
         let state = LoggerState {
-            options: LoggerOptions::BROWSE_BONJOUR | LoggerOptions::USE_SSL,
-            bonjour_service_type: None,
-            bonjour_service_name: None,
-            remote_host: None,
-            remote_port: None,
+            connection_mode: ConnectionMode::default(),
             write_stream: None,
             is_reconnection_scheduled: false,
             is_connecting: false,
@@ -106,7 +102,6 @@ impl LoggerState {
             is_client_info_added: false,
             log_messages: VecDeque::new(),
             message_tx: message_tx.clone(),
-            log_file_path: None,
             command_tx,
             runtime: Builder::new_multi_thread()
                 .enable_io()
@@ -119,12 +114,12 @@ impl LoggerState {
         Ok(state)
     }
 
-    pub fn process_log_queue(&mut self) {
+    pub fn process_log_queue(&mut self) -> Result<(), Error> {
         if self.log_messages.is_empty() {
             if DEBUG_LOGGER {
                 log::info!(target:"NSLogger", "process_log_queue empty");
             }
-            return;
+            return Ok(());
         }
 
         if DEBUG_LOGGER {
@@ -136,37 +131,17 @@ impl LoggerState {
         }
 
         if self.write_stream.is_none() {
-            if self.log_file_path.is_some() {
-                self.create_buffer_write_stream();
-            } else if !(self.is_connecting
-                || self.is_reconnection_scheduled
-                || self.options.contains(LoggerOptions::BROWSE_BONJOUR))
-            {
-                if self.remote_host.is_some() && self.remote_port.is_some() {
-                    self.connect_to_remote();
-                } else {
-                    self.setup_bonjour();
-                }
-            }
+            self.setup_connection()?;
         }
 
-        if self.remote_host.is_none() {
-            self.flush_queue_to_buffer_stream();
-        } else if self.write_stream.is_none() {
-            // the host is set but the socket isn't opened yet
-            self.disconnect_from_remote();
-            self.try_reconnecting();
-        } else if self.is_connected || self.log_file_path.is_some() {
-            // second part of the condition absent from Java code. Allows actually dumping log data
-            // when switching from network mode to file mode.
-            // FIXME SKIPPING SOME OTHER STUFF
-
+        if self.is_connected {
             self.write_messages_to_stream();
         }
 
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "[{:?}] finished processing log queue", thread::current().id());
         }
+        Ok(())
     }
 
     fn setup_network_manager(
@@ -207,135 +182,47 @@ impl LoggerState {
         self.is_client_info_added = true;
     }
 
-    pub fn change_options(&mut self, new_options: HashMap<String, String>) {
-        match new_options.get("filename") {
-            Some(filename) => {
-                if self.log_file_path.is_none()
-                    || self.log_file_path.as_ref().unwrap() != &PathBuf::from(filename)
-                {
-                    if self.log_file_path.is_none() {
-                        self.disconnect_from_remote();
-                    } else if self.write_stream.is_some() {
-                        self.close_buffer_write_stream();
-                    }
-
-                    self.log_file_path = Some(PathBuf::from(filename));
-                    self.create_buffer_write_stream();
-                }
-            }
-            None => {
-                let mut change = self.log_file_path.is_some();
-
-                let mut new_flags = LoggerOptions::empty();
-                let mut host: Option<String> = None;
-                let mut port: Option<u16> = None;
-
-                match new_options.get("use_ssl") {
-                    Some(ssl) => {
-                        if ssl == "1" {
-                            new_flags |= LoggerOptions::USE_SSL;
-                        }
-                    }
-                    None => (),
-                };
-
-                match new_options.get("remote_host") {
-                    Some(host_value) => {
-                        host = Some(host_value.clone());
-                        port = new_options
-                            .get("remote_port")
-                            .and_then(|port_string| u16::from_str_radix(port_string, 10).ok());
-
-                        if !change && (self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
-                            // check if the port or host is changing
-                            change = self.remote_host.is_none()
-                                || self.remote_host.as_ref().unwrap() != host.as_ref().unwrap()
-                                || self.remote_port.as_ref().unwrap() != port.as_ref().unwrap();
-                        }
-                    }
-                    None => new_flags |= LoggerOptions::BROWSE_BONJOUR,
-                };
-
-                if new_flags != self.options || change {
-                    if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "changing options: {:?}. Closing/restarting.", new_options);
-                    }
-
-                    if self.log_file_path.is_some() {
-                        self.close_buffer_write_stream();
-                    } else {
-                        self.disconnect_from_remote();
-                    }
-
-                    self.options = new_flags;
-
-                    if (new_flags & LoggerOptions::BROWSE_BONJOUR).is_empty() {
-                        self.remote_host = host;
-                        self.remote_port = port;
-
-                        self.connect_to_remote();
-                    } else {
-                        self.setup_bonjour();
-                    }
-                }
-            }
-        };
-    }
-
-    pub fn setup_bonjour(&mut self) {
-        if !self.options.contains(LoggerOptions::BROWSE_BONJOUR) {
-            self.close_bonjour();
-            return;
-        }
+    pub fn change_options(&mut self, mode: ConnectionMode) -> Result<(), Error> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Setting up Bonjour");
+            log::info!(target:"NSLogger", "changing options: {:?}. Closing/restarting.", mode);
         }
-
-        let service_type = if (self.options & LoggerOptions::USE_SSL).is_empty() {
-            "_nslogger._tcp"
-        } else {
-            "_nslogger-ssl._tcp"
-        };
-
-        self.bonjour_service_type = Some(service_type.to_string());
-
-        self.command_tx.send(network_manager::Command::SetupBonjour(
-            service_type.to_string(),
-        ));
-    }
-
-    pub fn close_bonjour(&mut self) {
-        // Nothing to do
-    }
-
-    pub fn connect_to_remote(&mut self) -> Result<(), &str> {
         if self.write_stream.is_some() {
-            return Err("internal error: remote_socket should be none");
+            self.disconnect();
         }
+        self.connection_mode = mode;
+        self.setup_connection()?;
+        Ok(())
+    }
 
-        self.close_bonjour();
+    pub fn browse_bonjour_services(&mut self, use_ssl: bool) -> Result<(), Error> {
+        self.command_tx
+            .send(network_manager::Command::SetupBonjour(
+                network_manager::BonjourServiceType::Default(use_ssl),
+            ))
+            .map_err(|_| Error::ChannelNotAvailable)?;
 
-        let remote_host = self.remote_host.as_ref().expect("remote host was none");
-        let remote_port = self.remote_port.expect("remote port was none");
+        self.is_connecting = true;
+
+        Ok(())
+    }
+
+    pub fn connect_to_remote(
+        &mut self,
+        host: &str,
+        port: u16,
+        use_ssl: bool,
+    ) -> Result<WriteStreamWrapper, Error> {
+        let connect_string = format!("{}:{}", host, port);
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "connecting to {}:{}", remote_host, remote_port);
+            log::info!(target:"NSLogger", "connecting to {connect_string}");
         }
-
-        let connect_string = format!("{}:{}", remote_host, remote_port);
-        let stream = match TcpStream::connect(connect_string) {
-            Ok(s) => s,
-            Err(_) => return Err("error occurred during tcp stream connection"),
-        };
-
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "{:?}", &stream);
-        }
-        self.write_stream = Some(WriteStreamWrapper::Tcp(stream));
-        if !(self.options & LoggerOptions::USE_SSL).is_empty() {
+        let stream = TcpStream::connect(connect_string)?;
+        let stream = if use_ssl {
             if DEBUG_LOGGER {
                 log::info!(target:"NSLogger", "activating SSL connection");
             }
 
+            // FIXME Rework the whole connection sub-process.
             let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls()).unwrap();
 
             ssl_connector_builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
@@ -343,24 +230,23 @@ impl LoggerState {
                 .set_verify_callback(openssl::ssl::SslVerifyMode::NONE, |_, _| true);
 
             let connector = ssl_connector_builder.build();
-            if let WriteStreamWrapper::Tcp(inner_stream) = self.write_stream.take().unwrap() {
-                let stream = connector.connect("foo", inner_stream).unwrap();
-                self.write_stream = Some(WriteStreamWrapper::Ssl(stream));
-                if DEBUG_LOGGER {
-                    log::info!(target:"NSLogger", "opened SSL stream");
-                }
+            // if let WriteStreamWrapper::Tcp(inner_stream) = self.write_stream.take().unwrap() {
+            let stream = connector.connect("localhost", stream).unwrap();
+            if DEBUG_LOGGER {
+                log::info!(target:"NSLogger", "opened SSL stream");
             }
-        }
+            WriteStreamWrapper::Ssl(stream)
+        } else {
+            WriteStreamWrapper::Tcp(stream)
+        };
 
         self.is_connecting = false;
         self.is_connected = true;
 
-        self.process_log_queue();
-
-        Ok(())
+        Ok(stream)
     }
 
-    pub fn disconnect_from_remote(&mut self) {
+    pub fn disconnect(&mut self) {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "disconnect_from_remote()");
         }
@@ -369,120 +255,100 @@ impl LoggerState {
         self.is_connecting = false;
         self.is_client_info_added = false;
 
-        if !(self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
-            // Otherwise we'll always try to connect to the same host & port, which might change
-            // from one connection to the next.
-            self.remote_host = None;
-            self.remote_port = None;
-        }
-
-        if self.write_stream.is_none() {
-            return;
-        }
-
-        self.write_stream.take();
+        self.write_stream = None;
     }
 
-    fn try_reconnecting(&mut self) {
+    pub fn setup_connection(&mut self) -> Result<(), Error> {
+        match self.connection_mode.clone() {
+            ConnectionMode::File(path) => {
+                let stream = self.create_buffer_write_stream(&path)?;
+                self.write_stream = Some(stream);
+            }
+            ConnectionMode::Tcp(host, port, use_ssl)
+                if !(self.is_connecting || self.is_reconnection_scheduled) =>
+            {
+                let stream = self.connect_to_remote(&host, port, use_ssl)?;
+                self.write_stream = Some(stream);
+            }
+            ConnectionMode::Bonjour(BonjourServiceType::Default(use_ssl))
+                if !(self.is_connecting || self.is_reconnection_scheduled) =>
+            {
+                self.browse_bonjour_services(use_ssl)?;
+            }
+            _ => {
+                // Nothing to do
+            }
+        };
+        Ok(())
+    }
+
+    fn try_reconnecting(&mut self) -> Result<(), Error> {
         if self.is_reconnection_scheduled {
-            return;
+            return Ok(());
         }
 
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "try_reconnecting");
         }
 
-        if !(self.options & LoggerOptions::BROWSE_BONJOUR).is_empty() {
-            self.setup_bonjour();
-        } else {
-            self.is_reconnection_scheduled = true;
-            // FIXME Should send with 2s delay. Should probably go through the networking thread
-            // for handling the reconnect
-            self.message_tx.send(Message::TryConnect);
-        }
+        self.setup_connection()?;
+        Ok(())
     }
 
-    pub fn create_buffer_write_stream(&mut self) {
-        use std::{fs::File, io::BufWriter};
-
-        use crate::nslogger::logger_state::WriteStreamWrapper;
-
-        if self.log_file_path.is_none() {
-            return;
-        }
-
+    pub fn create_buffer_write_stream(&mut self, path: &Path) -> Result<WriteStreamWrapper, Error> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Creating file buffer stream to {:?}", self.log_file_path.as_ref().unwrap());
+            log::info!(target:"NSLogger", "Creating file buffer stream to {path:?}");
         }
 
-        let file_writer =
-            BufWriter::new(File::create(self.log_file_path.as_ref().unwrap()).unwrap());
-        self.write_stream = Some(WriteStreamWrapper::File(file_writer));
-        self.flush_queue_to_buffer_stream();
+        let file_writer = BufWriter::new(File::create(path)?);
+        self.is_connected = true;
+        Ok(WriteStreamWrapper::File(file_writer))
     }
 
-    pub fn close_buffer_write_stream(&mut self) {
+    pub fn close_buffer_write_stream(&mut self) -> Result<(), Error> {
         if DEBUG_LOGGER && self.write_stream.is_some() {
             log::info!(target:"NSLogger", "Closing buffer stream");
         }
 
-        match self.write_stream.take() {
-            Some(mut stream) => stream.flush().unwrap(),
-            None => (),
+        if let Some(mut stream) = self.write_stream.take() {
+            stream.flush()?;
         };
-        // Letting the file go out of scope will close it
-
         self.is_client_info_added = false;
-        // otherwise the viewer window won't ever open!
+        Ok(())
     }
 
-    /// Write outstanding messages to the buffer file
-    pub fn flush_queue_to_buffer_stream(&mut self) {
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "flush_queue_to_buffer_stream");
-        }
-
-        self.write_messages_to_stream();
-    }
-
-    fn write_messages_to_stream(&mut self) {
-        match self.do_write_messages_to_stream() {
-            Ok(_) => (),
-            Err(e) => {
-                if DEBUG_LOGGER {
-                    log::warn!(target:"NSLogger", "Write to stream failed: {:?}", e);
-                }
-
-                self.disconnect_from_remote();
-                self.try_reconnecting();
-            }
-        };
-    }
-
-    fn do_write_messages_to_stream(&mut self) -> Result<(), Error> {
+    /// Write outstanding messages to the stream
+    fn write_messages_to_stream(&mut self) -> Result<(), Error> {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len());
         }
 
-        while let Some((message, signal)) = self.log_messages.pop_front() {
+        while let Some((mut message, signal)) = self.log_messages.pop_front() {
             {
                 if DEBUG_LOGGER {
                     log::info!(target:"NSLogger", "processing message {}", &message.sequence_number);
                 }
 
-                let message_vec = message.to_bytes();
-                let length = message_vec.len();
+                message.freeze();
+                let length = message.data.len();
 
-                {
-                    let tcp_stream = self.write_stream.as_mut().unwrap();
+                let tcp_stream = self.write_stream.as_mut().unwrap();
+                if DEBUG_LOGGER {
+                    log::info!(target:"NSLogger", "Writing to {:?} (len: {length})", tcp_stream);
+                }
+                if let Err(err) = tcp_stream.write_all(&message.data) {
+                    self.log_messages.push_front((message, signal));
                     if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "Writing to {:?} (len: {length})", tcp_stream);
+                        log::warn!(target:"NSLogger", "Write to stream failed: {err:?}");
                     }
-                    tcp_stream.write_all(&message_vec)?;
-                    if let Some(signal) = signal {
-                        tcp_stream.flush()?;
-                        signal.signal();
-                    }
+
+                    self.disconnect();
+                    self.try_reconnecting()?;
+                    return Ok(());
+                }
+                if let Some(signal) = signal {
+                    tcp_stream.flush()?;
+                    signal.signal();
                 }
             }
         }
@@ -496,7 +362,7 @@ impl Drop for LoggerState {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "calling drop for logger state");
         }
-        self.disconnect_from_remote();
+        self.disconnect();
         self.command_tx.send(network_manager::Command::Quit);
     }
 }

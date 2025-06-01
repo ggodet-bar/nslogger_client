@@ -285,12 +285,11 @@ impl LogMessage {
         self.add_string(MessagePartKey::ThreadId, &thread_name);
     }
 
-    pub fn to_bytes(mut self) -> Vec<u8> {
+    pub fn freeze(&mut self) {
         let size = self.data.len() as u32 - 4;
         let data_slice = self.data.as_mut_slice();
         data_slice[..4].copy_from_slice(&size.to_be_bytes());
         data_slice[4..6].copy_from_slice(&self.part_count.to_be_bytes());
-        self.data
     }
 }
 
@@ -301,10 +300,11 @@ mod tests {
     #[test]
     fn smallest_message() {
         let thread_name_len = std::thread::current().name().unwrap().len();
-        let msg = LogMessage::new(LogMessageType::Log);
+        let mut msg = LogMessage::new(LogMessageType::Log);
         assert_eq!(5, msg.part_count);
         assert_eq!(38 + thread_name_len, msg.data.len());
-        let bytes = msg.to_bytes();
+        msg.freeze();
+        let bytes = msg.data;
         assert_eq!(
             34 + thread_name_len as u32,
             u32::from_be_bytes(bytes[0..4].try_into().unwrap())

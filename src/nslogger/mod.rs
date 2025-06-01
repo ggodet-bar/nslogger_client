@@ -1,11 +1,9 @@
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     str::FromStr,
     sync::{Arc, Condvar, Mutex},
 };
 
-use bitflags::bitflags;
 use cfg_if::cfg_if;
 use chrono;
 use log::log;
@@ -33,8 +31,9 @@ pub use self::log_message::{Domain, Level};
 pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
-    logger_state::{LoggerState, Message},
+    logger_state::{ConnectionMode, LoggerState, Message},
     message_worker::MessageWorker,
+    network_manager::BonjourServiceType,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -59,32 +58,26 @@ impl Signal {
     }
 }
 
-bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct LoggerOptions: u16 {
-        /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer)
-        const FLUSH_EACH_MESSAGE   = 0b00000001;
-        const BROWSE_BONJOUR       = 0b00000010;
-        const USE_SSL              = 0b00000100;
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("channel was closed or end was dropped")]
     ChannelNotAvailable,
     #[error("IO error")]
     IO(#[from] std::io::Error),
+    #[error("invalid file path: {_0}")]
+    InvalidPath(String),
 }
 
 pub struct Logger {
     shared_state: Arc<Mutex<LoggerState>>,
     ready_signal: Signal,
     message_tx: mpsc::UnboundedSender<Message>,
+    /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer)
+    flush_messages: bool,
 }
 
 impl Logger {
-    pub fn new() -> Result<Logger, Error> {
+    pub fn new() -> Result<Self, Error> {
         if DEBUG_LOGGER {
             cfg_if! {
                 if #[cfg(test)] {
@@ -110,49 +103,22 @@ impl Logger {
             shared_state: LoggerState::new(message_tx.clone(), message_rx, ready_signal.clone())?,
             message_tx,
             ready_signal,
+            flush_messages: false,
         });
     }
 
-    pub fn set_bonjour_service(
-        &self,
-        service_type: Option<&str>,
-        service_name: Option<&str>,
-        use_ssl: bool,
-    ) -> Result<(), Error> {
-        if self.ready_signal.is_triggered() {
-            let mut properties = HashMap::new();
+    pub fn with_options(mode: ConnectionMode, flush_messages: bool) -> Result<Self, Error> {
+        let mut logger = Logger::new()?;
+        logger.shared_state.lock().unwrap().connection_mode = mode;
+        logger.flush_messages = flush_messages;
+        Ok(logger)
+    }
 
-            if let Some(name_value) = service_name {
-                properties.insert("bonjour_service".to_string(), String::from(name_value));
-            }
-
-            if let Some(type_value) = service_type {
-                properties.insert("bonjour_type".to_string(), String::from(type_value));
-            }
-
-            properties.insert(
-                "use_ssl".to_string(),
-                String::from(if use_ssl { "1" } else { "0" }),
-            );
-
-            self.message_tx
-                .send(Message::OptionChange(properties))
-                .map_err(|_| Error::ChannelNotAvailable)?;
-        } else {
-            // Worker thread isn't yet setup
-            let mut local_shared_state = self.shared_state.lock().unwrap();
-            (*local_shared_state).bonjour_service_name =
-                service_name.and_then(|v| Some(v.to_string()));
-            (*local_shared_state).bonjour_service_type =
-                service_type.and_then(|v| Some(v.to_string()));
-            (*local_shared_state).options |= LoggerOptions::BROWSE_BONJOUR;
-
-            if use_ssl {
-                (*local_shared_state).options = local_shared_state.options | LoggerOptions::USE_SSL;
-            } else {
-                (*local_shared_state).options = local_shared_state.options - LoggerOptions::USE_SSL;
-            }
-        }
+    pub fn set_bonjour_service(&mut self, service: BonjourServiceType) -> Result<(), Error> {
+        let connection_mode = ConnectionMode::Bonjour(service);
+        self.message_tx
+            .send(Message::ConnectionModeChange(connection_mode))
+            .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(())
     }
 
@@ -162,66 +128,25 @@ impl Logger {
         host_port: u16,
         use_ssl: bool,
     ) -> Result<(), Error> {
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "set_remote_host host={} port={} use_ssl={}", host_name, host_port, use_ssl);
-        }
-
-        if self.ready_signal.is_triggered() {
-            let mut properties = HashMap::new();
-            properties.insert("remote_host".to_string(), String::from(host_name));
-            properties.insert(
-                "remote_port".to_string(),
-                String::from(format!("{}", host_port)),
-            );
-            properties.insert(
-                "use_ssl".to_string(),
-                String::from(if use_ssl { "1" } else { "0" }),
-            );
-
-            self.message_tx
-                .send(Message::OptionChange(properties))
-                .map_err(|_| Error::ChannelNotAvailable)?;
-        } else {
-            // Worker thread isn't yet setup
-            let mut local_shared_state = self.shared_state.lock().unwrap();
-            (*local_shared_state).remote_host = Some(String::from(host_name));
-            (*local_shared_state).remote_port = Some(host_port);
-
-            if use_ssl {
-                (*local_shared_state).options = local_shared_state.options | LoggerOptions::USE_SSL;
-            } else {
-                (*local_shared_state).options = local_shared_state.options - LoggerOptions::USE_SSL;
-            }
-        }
+        let connection_mode = ConnectionMode::Tcp(host_name.to_string(), host_port, use_ssl);
+        self.message_tx
+            .send(Message::ConnectionModeChange(connection_mode))
+            .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(())
     }
 
     pub fn set_log_file_path(&self, file_path: &str) -> Result<(), Error> {
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "set_log_file_path path={:?}", file_path);
-        }
-
-        if self.ready_signal.is_triggered() {
-            let mut properties = HashMap::new();
-            properties.insert("filename".to_string(), String::from(file_path));
-
-            self.message_tx
-                .send(Message::OptionChange(properties))
-                .map_err(|_| Error::ChannelNotAvailable)?;
-        } else {
-            self.shared_state.lock().unwrap().log_file_path =
-                Some(PathBuf::from(file_path.to_string()));
-        }
+        let connection_mode = ConnectionMode::File(
+            PathBuf::from_str(file_path).map_err(|_| Error::InvalidPath(file_path.to_string()))?,
+        );
+        self.message_tx
+            .send(Message::ConnectionModeChange(connection_mode))
+            .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(())
     }
 
-    pub fn set_message_flushing(&self, flush_each_message: bool) {
-        let mut local_state = self.shared_state.lock().unwrap();
-        if flush_each_message {
-            local_state.options |= LoggerOptions::FLUSH_EACH_MESSAGE;
-        } else {
-            local_state.options -= LoggerOptions::FLUSH_EACH_MESSAGE;
-        }
+    pub fn set_message_flushing(&mut self, flush_each_message: bool) {
+        self.flush_messages = flush_each_message;
     }
 
     fn inner_log(&self, log_message: LogMessage) {
@@ -229,7 +154,7 @@ impl Logger {
             log::info!(target:"NSLogger", "entering log");
         }
         self.start_logging_thread_if_needed();
-        self.send_and_flush_if_required(log_message);
+        self.send_and_flush(log_message);
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "Exiting log");
         }
@@ -334,16 +259,11 @@ impl Logger {
         }
     }
 
-    fn send_and_flush_if_required(&self, log_message: LogMessage) -> Result<(), Error> {
-        let needs_flush = self
-            .shared_state
-            .lock()
-            .unwrap()
-            .options
-            .contains(LoggerOptions::FLUSH_EACH_MESSAGE);
-        let flush_signal = needs_flush.then(|| Signal::default());
+    fn send_and_flush(&self, log_message: LogMessage) -> Result<(), Error> {
+        let flush_signal = self.flush_messages.then(|| Signal::default());
         self.message_tx
-            .send(Message::AddLog(log_message, flush_signal.clone()));
+            .send(Message::AddLog(log_message, flush_signal.clone()))
+            .map_err(|_| Error::ChannelNotAvailable)?;
 
         let Some(signal) = flush_signal else {
             return Ok(());

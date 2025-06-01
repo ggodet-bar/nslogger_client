@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use crate::nslogger::{
     logger_state::{LoggerState, Message},
     message_handler::MessageHandler,
-    LoggerOptions, Signal, DEBUG_LOGGER,
+    Error, Signal, DEBUG_LOGGER,
 };
 
 pub struct MessageWorker {
@@ -27,7 +27,7 @@ impl MessageWorker {
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Result<(), Error> {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "Logging thread starting up");
         }
@@ -44,34 +44,21 @@ impl MessageWorker {
 
         {
             let mut state = self.shared_state.lock().unwrap();
-            if state.log_file_path.is_some() {
-                state.create_buffer_write_stream();
-            } else if state.remote_host.is_some() && state.remote_port.is_some() {
-                state.connect_to_remote();
-            } else if state.options.contains(LoggerOptions::BROWSE_BONJOUR) {
-                state.setup_bonjour();
-                // Simply triggers an async bonjour service search. The service probably won't be
-                // ready when returning from setup_bonjour().
-            }
+            state.setup_connection()?;
         }
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "Starting log event loop");
         }
 
-        // Process messages
-        self.handler.run_loop().await;
+        self.handler.run_loop().await?;
 
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "Logging thread looper ended");
         }
-
-        // Once loop exists, reset the variable (in case of problem we'll recreate a thread)
-        self.shared_state.lock().unwrap().close_bonjour();
         self.shared_state
             .lock()
             .unwrap()
-            .close_buffer_write_stream();
-        //loggingThread = null;
-        //loggingThreadHandler = null;
+            .close_buffer_write_stream()?;
+        Ok(())
     }
 }

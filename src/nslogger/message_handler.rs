@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use crate::nslogger::{
     log_message::SEQUENCE_NB_OFFSET,
     logger_state::{LoggerState, Message},
-    Signal, DEBUG_LOGGER,
+    Error, Signal, DEBUG_LOGGER,
 };
 
 pub struct MessageHandler {
@@ -34,7 +34,7 @@ impl MessageHandler {
         }
     }
 
-    pub async fn run_loop(&mut self) {
+    pub async fn run_loop(&mut self) -> Result<(), Error> {
         /*
          * We are ready to run. Unpark the waiting threads now
          */
@@ -64,33 +64,22 @@ impl MessageHandler {
 
                     let mut local_shared_state = self.shared_state.lock().unwrap();
                     local_shared_state.log_messages.push_back((message, signal));
-                    //if local_shared_state.is_connected {
-                    local_shared_state.process_log_queue();
-                    //}
+                    local_shared_state.process_log_queue()?;
                 }
-                Message::OptionChange(new_options) => {
+                Message::ConnectionModeChange(new_mode) => {
                     if DEBUG_LOGGER {
                         log::info!(target:"NSLogger", "options change received");
                     }
 
-                    self.shared_state
-                        .lock()
-                        .unwrap()
-                        .change_options(new_options);
+                    self.shared_state.lock().unwrap().change_options(new_mode)?;
                 }
-                Message::TryConnect => self.try_connect(),
-                Message::TryConnectBonjour(service_name, host, port) => {
+                Message::TryConnectBonjour(service_type, host, port, use_ssl) => {
                     if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "connecting with Bonjour setup service={}, host={}, port={}", service_name, host, port);
+                        log::info!(target:"NSLogger", "connecting with Bonjour setup service={service_type}, host={host}, port={port}");
                     }
 
                     let mut local_shared_state = self.shared_state.lock().unwrap();
-
-                    (*local_shared_state).bonjour_service_name = Some(service_name);
-                    (*local_shared_state).remote_host = Some(host);
-                    (*local_shared_state).remote_port = Some(port);
-
-                    local_shared_state.connect_to_remote();
+                    local_shared_state.connect_to_remote(&host, port, use_ssl)?;
                 }
                 Message::Quit => {
                     break;
@@ -101,25 +90,6 @@ impl MessageHandler {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "leaving message handler loop");
         }
-    }
-
-    fn try_connect(&self) {
-        let mut local_shared_state = self.shared_state.lock().unwrap();
-        if DEBUG_LOGGER {
-            log::info!(target:"NSLogger",
-                  "try connect message received, remote socket is {:?}, connecting={:?}",
-                  local_shared_state.write_stream,
-                  local_shared_state.is_connecting);
-        }
-
-        (*local_shared_state).is_reconnection_scheduled = false;
-
-        if local_shared_state.write_stream.is_none()
-            && !local_shared_state.is_connecting
-            && local_shared_state.remote_host.is_some()
-            && local_shared_state.remote_port.is_some()
-        {
-            local_shared_state.connect_to_remote();
-        }
+        Ok(())
     }
 }

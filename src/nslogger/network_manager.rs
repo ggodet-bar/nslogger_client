@@ -10,12 +10,12 @@ use tokio::{
 use crate::nslogger::{logger_state::Message, DEBUG_LOGGER};
 
 pub enum Command {
-    SetupBonjour(String),
+    SetupBonjour(BonjourServiceType),
     Quit,
 }
 
 pub enum BonjourServiceStatus {
-    ServiceFound(String, String, u16),
+    ServiceFound(String, String, u16, bool),
     TimedOut,
     Unresolved,
 }
@@ -51,19 +51,21 @@ impl NetworkManager {
             }
 
             match message {
-                Command::SetupBonjour(service_name) => {
+                Command::SetupBonjour(service_type) => {
                     let mut is_connected = false;
                     while !is_connected {
-                        match self.bonjour_service.setup_bonjour(&service_name).await? {
+                        match self.bonjour_service.setup_bonjour(service_type).await? {
                             BonjourServiceStatus::ServiceFound(
                                 bonjour_service_name,
                                 host,
                                 port,
+                                use_ssl,
                             ) => {
                                 self.message_tx.send(Message::TryConnectBonjour(
                                     bonjour_service_name,
                                     host,
                                     port,
+                                    use_ssl,
                                 ));
                                 is_connected = true;
                             }
@@ -94,58 +96,70 @@ impl NetworkManager {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum BonjourServiceType {
+    /// Service type
+    Custom(String, bool),
+    /// Defines whether to use SSL
+    Default(bool),
+}
+
 #[derive(Default)]
 pub struct BonjourService;
 
 impl BonjourService {
-    async fn setup_bonjour(&mut self, service_name: &str) -> io::Result<BonjourServiceStatus> {
+    async fn setup_bonjour(
+        &mut self,
+        service_type: &BonjourServiceType,
+    ) -> io::Result<BonjourServiceStatus> {
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "Setting up Bonjour");
+        }
+        let (service_name, use_ssl) = match service_type {
+            BonjourServiceType::Custom(name, use_ssl) => (name.as_str(), *use_ssl),
+            BonjourServiceType::Default(use_ssl) if *use_ssl => ("_nslogger-ssl._tcp.local.", true),
+            _ => ("_nslogger._tcp.local.", false),
+        };
         let mut service_browser = async_dnssd::browse(service_name);
-        match timeout(Duration::from_secs(5), service_browser.next()).await {
-            Ok(Some(Ok(browse_result))) => {
-                if DEBUG_LOGGER {
-                    log::info!(target:"NSLogger", "Browse result: {:?}", browse_result);
-                    log::info!(target:"NSLogger", "Service name: {}", browse_result.service_name);
-                }
-                let bonjour_service_name = browse_result.service_name.to_string();
-                let mut remote_host: Option<String> = None;
-                let mut remote_port: Option<u16> = None;
-                let resolve_details = browse_result.resolve().next().await;
-                let Some(resolve_details) = resolve_details else {
-                    return Ok(BonjourServiceStatus::Unresolved);
-                };
-                let resolve_details = resolve_details?;
-                if DEBUG_LOGGER {
-                    log::info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details);
-                }
-                for host_addr in format!("{}:{}", resolve_details.host_target, resolve_details.port)
-                    .to_socket_addrs()
-                    .unwrap()
-                {
-                    if host_addr.ip().is_ipv4() {
-                        let ip_address = format!("{}", host_addr.ip());
-                        if DEBUG_LOGGER {
-                            log::info!(target:"NSLogger", "Bonjour host details {:?}", host_addr);
-                        }
-                        remote_host = Some(ip_address);
-                        remote_port = Some(resolve_details.port);
-                        break;
-                    }
-                }
-
-                Ok(BonjourServiceStatus::ServiceFound(
-                    bonjour_service_name,
-                    remote_host.unwrap(),
-                    remote_port.unwrap(),
-                ))
-            }
+        let browse_result = match timeout(Duration::from_secs(5), service_browser.next()).await {
+            Ok(Some(Ok(browse_result))) => browse_result,
             Err(_) => {
                 if DEBUG_LOGGER {
                     log::warn!(target:"NSLogger", "Bonjour discovery timed out")
                 }
-
-                Ok(BonjourServiceStatus::TimedOut)
+                return Ok(BonjourServiceStatus::TimedOut);
             }
-            _ => Ok(BonjourServiceStatus::Unresolved),
+            _ => return Ok(BonjourServiceStatus::Unresolved),
+        };
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "Browse result: {:?}", browse_result);
+            log::info!(target:"NSLogger", "Service name: {}", browse_result.service_name);
         }
+        let bonjour_service_name = browse_result.service_name.to_string();
+        let resolve_details = browse_result.resolve().next().await;
+        let Some(resolve_details) = resolve_details else {
+            return Ok(BonjourServiceStatus::Unresolved);
+        };
+        let resolve_details = resolve_details?;
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details);
+        }
+        let Some(host_addr) = format!("{}:{}", resolve_details.host_target, resolve_details.port)
+            .to_socket_addrs()?
+            .next()
+        else {
+            return Ok(BonjourServiceStatus::Unresolved);
+        };
+        let ip_address = host_addr.ip().to_string();
+        if DEBUG_LOGGER {
+            log::info!(target:"NSLogger", "Bonjour host details {:?}", host_addr);
+        }
+
+        Ok(BonjourServiceStatus::ServiceFound(
+            bonjour_service_name,
+            ip_address,
+            resolve_details.port,
+            use_ssl,
+        ))
     }
 }

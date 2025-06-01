@@ -14,9 +14,41 @@
 //! - builder pattern for logger initialization
 //! - possibly some optimizations.
 
+use std::{env, path::PathBuf, str::FromStr};
+
 pub mod nslogger;
 
+use nslogger::ConnectionMode;
 pub use nslogger::Logger;
+
+fn parse_env() -> (ConnectionMode, bool) {
+    let connection_mode = if let Ok(val) = env::var("LOG_FILENAME") {
+        PathBuf::from_str(&val)
+            .map(|path| ConnectionMode::File(path))
+            .unwrap_or_default()
+    } else {
+        let use_ssl = env::var("LOG_USE_SSL")
+            .map(|v| v == "1")
+            .unwrap_or_default();
+        if let Ok(val) = env::var("LOG_REMOTE_HOST") {
+            val.split_once(':')
+                .map(|(host, port)| {
+                    u16::from_str(port)
+                        .map(|p| ConnectionMode::Tcp(host.to_string(), p, use_ssl))
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default() // ConnectionMode::Tcp((), (), ())
+        } else {
+            env::var("LOG_BONJOUR_SERVICE")
+                .map(|s| ConnectionMode::Bonjour(nslogger::BonjourServiceType::Custom(s, use_ssl)))
+                .unwrap_or_default()
+        }
+    };
+    let flush_messages = env::var("LOG_FLUSH_MESSAGES")
+        .map(|v| v == "1")
+        .unwrap_or_default();
+    (connection_mode, flush_messages)
+}
 
 /// Initializes the global logger with a Logger instance.
 ///
@@ -26,7 +58,8 @@ pub use nslogger::Logger;
 pub fn init() -> Result<(), log::SetLoggerError> {
     log::set_logger(|max_log_level| {
         max_log_level.set(log::LogLevelFilter::Info);
-        let logger = Logger::new().unwrap();
+        let (connection_mode, flush_messages) = parse_env();
+        let logger = Logger::with_options(connection_mode, flush_messages).unwrap();
         //logger.set_message_flushing(true) ;
         Box::new(logger)
     })
@@ -34,12 +67,12 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Read, path::Path};
+    use std::{fs::File, io::Read};
 
     use tempfile::NamedTempFile;
 
     use crate::nslogger::{
-        Domain, Level, LogMessage, LogMessageType, Logger, MessagePartKey, MessagePartType,
+        BonjourServiceType, Domain, Level, LogMessageType, Logger, MessagePartKey, MessagePartType,
         SEQUENCE_NB_OFFSET,
     };
 
@@ -76,7 +109,7 @@ mod tests {
 
     #[test]
     fn logs_empty_domain() {
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
         log.logm(
             Some(Domain::Custom("".to_string())),
@@ -100,7 +133,7 @@ mod tests {
     fn logs_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let file_path = tempfile.into_temp_path();
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
         log.set_log_file_path(file_path.to_str().unwrap())
             .expect("setting file path"); // File extension is constrained!!
@@ -185,13 +218,13 @@ mod tests {
     fn switches_from_file_to_bonjour() {
         let tempfile = NamedTempFile::new().expect("temp file");
 
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
         log.set_log_file_path(tempfile.into_temp_path().to_str().unwrap())
             .expect("setting file path"); // File extension is constrained!!
         log.logm(Some(Domain::App), Level::Warning, "message logged to file");
 
-        log.set_bonjour_service(None, None, false);
+        log.set_bonjour_service(BonjourServiceType::Default(false));
         //log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client
         // no matter the setting
         log.set_message_flushing(true);
@@ -205,7 +238,7 @@ mod tests {
 
     #[test]
     fn switches_from_bonjour_to_file() {
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.logm(
             Some(Domain::App),
             Level::Warning,
@@ -225,7 +258,7 @@ mod tests {
     fn flushes_log_messages() {
         // TODO a better approach would probably be to write a small thread that crashes, with a
         // message that has to be passed before the crash?
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_remote_host("127.0.0.1", 50000, true); // SSL Will be on on the desktop client no matter the setting
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warning, "flush test");
@@ -238,7 +271,7 @@ mod tests {
 
     #[test]
     fn logs_mark() {
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_remote_host("127.0.0.1", 50000, true)
             .expect("setting host");
         log.set_message_flushing(true);
@@ -250,7 +283,7 @@ mod tests {
 
     #[test]
     fn logs_empty_mark() {
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_remote_host("127.0.0.1", 50000, true);
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warning, "before mark 1");
@@ -268,7 +301,7 @@ mod tests {
 
         file_handle.read_to_end(&mut buffer).unwrap();
 
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_remote_host("127.0.0.1", 50000, true);
         log.set_message_flushing(true);
         log.log_image(None, None, None, None, Level::Warning, &buffer);
@@ -279,7 +312,7 @@ mod tests {
         let bytes: [u8; 8] = [0x6c, 0x6f, 0x67, 0x20, 0x74, 0x65, 0x73, 0x74];
         // should read 'log test'
 
-        let log = Logger::new().expect("logger instance");
+        let mut log = Logger::new().expect("logger instance");
         log.set_remote_host("127.0.0.1", 50000, true);
         log.set_message_flushing(true);
         log.log_data(None, None, None, None, Level::Warning, &bytes);
