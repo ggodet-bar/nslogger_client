@@ -29,7 +29,7 @@ impl MessageWorker {
 
     pub async fn run(&mut self) -> Result<(), Error> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Logging thread starting up");
+            log::info!("logging thread starting up");
         }
 
         // Since we don't have a straightforward way to block the loop (cf Android), we'll setup
@@ -47,13 +47,13 @@ impl MessageWorker {
             state.setup_connection()?;
         }
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Starting log event loop");
+            log::info!("starting log event loop");
         }
 
         self.handler.run_loop().await?;
 
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Logging thread looper ended");
+            log::info!("stopped log event loop");
         }
         self.shared_state
             .lock()

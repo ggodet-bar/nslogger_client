@@ -85,7 +85,7 @@ impl Logger {
                         START.call_once(|| {
                             env_logger::init() ;
                         }) ;
-                        log::info!(target:"NSLogger", "NSLogger client started") ;
+                        log::info!("NSLogger client started") ;
                     }
                 }
                 else {
@@ -150,12 +150,12 @@ impl Logger {
 
     fn inner_log(&self, log_message: LogMessage) {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "entering log");
+            log::info!("entering log");
         }
         self.start_logging_thread_if_needed();
         self.send_and_flush(log_message);
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Exiting log");
+            log::info!("Exiting log");
         }
     }
 
@@ -248,13 +248,13 @@ impl Logger {
 
     fn start_logging_thread_if_needed(&self) {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Waiting for worker to be ready");
+            log::info!("waiting for worker to be ready");
         }
 
         self.ready_signal.wait();
 
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Worker is ready and running");
+            log::info!("worker is ready and running");
         }
     }
 
@@ -268,11 +268,11 @@ impl Logger {
             return;
         };
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "waiting for message flush");
+            log::info!("waiting for message flush");
         }
         signal.wait();
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "message flush ack received");
+            log::info!("message flush ack received");
         }
     }
 }
@@ -280,10 +280,10 @@ impl Logger {
 impl Drop for Logger {
     fn drop(&mut self) {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "calling drop for logger instance");
+            log::info!("calling drop for logger instance");
         }
 
-        self.message_tx.send(Message::Quit);
+        self.message_tx.send(Message::Quit).unwrap();
     }
 }
 

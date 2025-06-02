@@ -67,7 +67,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Read};
+    use std::{fs::File, io::Read, time::Duration};
 
     use tempfile::NamedTempFile;
 
@@ -105,6 +105,7 @@ mod tests {
             "Tag test!",
         );
         log.log("Just a simple message");
+        std::thread::sleep(Duration::from_secs(6));
     }
 
     #[test]
@@ -224,11 +225,9 @@ mod tests {
             .expect("setting file path"); // File extension is constrained!!
         log.logm(Some(Domain::App), Level::Warning, "message logged to file");
 
-        log.set_bonjour_service(BonjourServiceType::Default(false));
-        //log.set_remote_host("127.0.0.1", 50000, true) ; // SSL Will be on on the desktop client
+        log.set_bonjour_service(BonjourServiceType::Default(false))
+            .expect("setting bonjour");
         // no matter the setting
-        log.set_message_flushing(true);
-        // FIXME Won't work: the change_option method will probably still be running
         log.logm(
             Some(Domain::App),
             Level::Warning,

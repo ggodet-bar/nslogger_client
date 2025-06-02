@@ -37,13 +37,13 @@ impl NetworkManager {
 
     pub async fn run(&mut self) -> io::Result<()> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "starting network manager");
+            log::info!("starting network manager");
         }
 
         // TODO Pass a signal to quit the service
         while let Some(service_type) = &self.command_rx.recv().await {
             if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "network manager received message");
+                log::info!("network manager received message");
             }
             let mut is_connected = false;
             while !is_connected {
@@ -54,17 +54,20 @@ impl NetworkManager {
                         port,
                         use_ssl,
                     ) => {
-                        self.message_tx.send(Message::TryConnectBonjour(
-                            bonjour_service_name,
-                            host,
-                            port,
-                            use_ssl,
-                        ));
+                        log::info!("found Bonjour service {bonjour_service_name}");
+                        self.message_tx
+                            .send(Message::TryConnectBonjour(
+                                bonjour_service_name,
+                                host,
+                                port,
+                                use_ssl,
+                            ))
+                            .unwrap();
                         is_connected = true;
                     }
                     _ => {
                         if DEBUG_LOGGER {
-                            log::info!(target:"NSLogger", "couldn't resolve Bonjour. Will retry in a few seconds");
+                            log::info!("couldn't resolve Bonjour. Will retry in a few seconds");
                         }
 
                         sleep(Duration::from_secs(5)).await
@@ -74,7 +77,7 @@ impl NetworkManager {
         }
 
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "stopping network manager");
+            log::info!("stopping network manager");
         }
         Ok(())
     }
@@ -97,27 +100,26 @@ impl BonjourService {
         service_type: &BonjourServiceType,
     ) -> io::Result<BonjourServiceStatus> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Setting up Bonjour");
+            log::info!("setting up Bonjour");
         }
         let (service_name, use_ssl) = match service_type {
             BonjourServiceType::Custom(name, use_ssl) => (name.as_str(), *use_ssl),
-            BonjourServiceType::Default(use_ssl) if *use_ssl => ("_nslogger-ssl._tcp.local.", true),
-            _ => ("_nslogger._tcp.local.", false),
+            BonjourServiceType::Default(use_ssl) if *use_ssl => ("_nslogger-ssl._tcp.", true),
+            _ => ("_nslogger._tcp.", false),
         };
         let mut service_browser = async_dnssd::browse(service_name);
         let browse_result = match timeout(Duration::from_secs(5), service_browser.next()).await {
             Ok(Some(Ok(browse_result))) => browse_result,
             Err(_) => {
                 if DEBUG_LOGGER {
-                    log::warn!(target:"NSLogger", "Bonjour discovery timed out")
+                    log::warn!("Bonjour discovery timed out")
                 }
                 return Ok(BonjourServiceStatus::TimedOut);
             }
             _ => return Ok(BonjourServiceStatus::Unresolved),
         };
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Browse result: {:?}", browse_result);
-            log::info!(target:"NSLogger", "Service name: {}", browse_result.service_name);
+            log::info!("browse result: {:?}", browse_result);
         }
         let bonjour_service_name = browse_result.service_name.to_string();
         let resolve_details = browse_result.resolve().next().await;
@@ -126,7 +128,7 @@ impl BonjourService {
         };
         let resolve_details = resolve_details?;
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Service resolution details: {:?}", resolve_details);
+            log::info!("service resolution details: {:?}", resolve_details);
         }
         let Some(host_addr) = format!("{}:{}", resolve_details.host_target, resolve_details.port)
             .to_socket_addrs()?
@@ -136,7 +138,7 @@ impl BonjourService {
         };
         let ip_address = host_addr.ip().to_string();
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Bonjour host details {:?}", host_addr);
+            log::info!("Bonjour host details {host_addr:?}");
         }
 
         Ok(BonjourServiceStatus::ServiceFound(

@@ -115,13 +115,13 @@ impl LoggerState {
     pub fn process_log_queue(&mut self) -> Result<(), Error> {
         if self.log_messages.is_empty() {
             if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "process_log_queue empty");
+                log::info!("process_log_queue empty");
             }
             return Ok(());
         }
 
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "process_log_queue");
+            log::info!("process_log_queue");
         }
 
         if !self.is_client_info_added {
@@ -137,7 +137,10 @@ impl LoggerState {
         }
 
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "[{:?}] finished processing log queue", thread::current().id());
+            log::info!(
+                "[{:?}] finished processing log queue",
+                thread::current().id()
+            );
         }
         Ok(())
     }
@@ -174,7 +177,7 @@ impl LoggerState {
 
     fn push_client_info_to_front_of_queue(&mut self) {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "pushing client info to front of queue");
+            log::info!("pushing client info to front of queue");
         }
 
         self.log_messages
@@ -184,7 +187,7 @@ impl LoggerState {
 
     pub fn change_options(&mut self, mode: ConnectionMode) -> Result<(), Error> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "changing options: {:?}. Closing/restarting.", mode);
+            log::info!("changing options: {:?}. Closing/restarting.", mode);
         }
         if self.write_stream.is_some() {
             self.disconnect();
@@ -212,12 +215,12 @@ impl LoggerState {
     ) -> Result<WriteStreamWrapper, Error> {
         let connect_string = format!("{}:{}", host, port);
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "connecting to {connect_string}");
+            log::info!("connecting to {connect_string}");
         }
         let stream = TcpStream::connect(connect_string)?;
         let stream = if use_ssl {
             if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "activating SSL connection");
+                log::info!("activating SSL connection");
             }
 
             // FIXME Rework the whole connection sub-process.
@@ -231,7 +234,7 @@ impl LoggerState {
             // if let WriteStreamWrapper::Tcp(inner_stream) = self.write_stream.take().unwrap() {
             let stream = connector.connect("localhost", stream).unwrap();
             if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "opened SSL stream");
+                log::info!("opened SSL stream");
             }
             WriteStreamWrapper::Ssl(stream)
         } else {
@@ -246,7 +249,7 @@ impl LoggerState {
 
     pub fn disconnect(&mut self) {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "disconnect_from_remote()");
+            log::info!("disconnect_from_remote()");
         }
 
         self.is_connected = false;
@@ -286,7 +289,7 @@ impl LoggerState {
         }
 
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "try_reconnecting");
+            log::info!("try_reconnecting");
         }
 
         self.setup_connection()?;
@@ -295,7 +298,7 @@ impl LoggerState {
 
     pub fn create_buffer_write_stream(&mut self, path: &Path) -> Result<WriteStreamWrapper, Error> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Creating file buffer stream to {path:?}");
+            log::info!("creating file buffer stream to {path:?}");
         }
 
         let file_writer = BufWriter::new(File::create(path)?);
@@ -305,7 +308,7 @@ impl LoggerState {
 
     pub fn close_buffer_write_stream(&mut self) -> Result<(), Error> {
         if DEBUG_LOGGER && self.write_stream.is_some() {
-            log::info!(target:"NSLogger", "Closing buffer stream");
+            log::info!("closing buffer stream");
         }
 
         if let Some(mut stream) = self.write_stream.take() {
@@ -318,13 +321,16 @@ impl LoggerState {
     /// Write outstanding messages to the stream
     fn write_messages_to_stream(&mut self) -> Result<(), Error> {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "process_log_queue: {} queued messages", self.log_messages.len());
+            log::info!(
+                "process_log_queue: {} queued messages",
+                self.log_messages.len()
+            );
         }
 
         while let Some((mut message, signal)) = self.log_messages.pop_front() {
             {
                 if DEBUG_LOGGER {
-                    log::info!(target:"NSLogger", "processing message {}", &message.sequence_number);
+                    log::info!("processing message {}", &message.sequence_number);
                 }
 
                 message.freeze();
@@ -332,12 +338,12 @@ impl LoggerState {
 
                 let tcp_stream = self.write_stream.as_mut().unwrap();
                 if DEBUG_LOGGER {
-                    log::info!(target:"NSLogger", "Writing to {:?} (len: {length})", tcp_stream);
+                    log::info!("writing to {:?} (len: {length})", tcp_stream);
                 }
                 if let Err(err) = tcp_stream.write_all(&message.data) {
                     self.log_messages.push_front((message, signal));
                     if DEBUG_LOGGER {
-                        log::warn!(target:"NSLogger", "Write to stream failed: {err:?}");
+                        log::warn!("write to stream failed: {err:?}");
                     }
 
                     self.disconnect();
@@ -358,7 +364,7 @@ impl LoggerState {
 impl Drop for LoggerState {
     fn drop(&mut self) {
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "calling drop for logger state");
+            log::info!("calling drop for logger state");
         }
         self.disconnect();
         self.runtime.take().unwrap().shutdown_background();

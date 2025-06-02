@@ -39,13 +39,13 @@ impl MessageHandler {
          * We are ready to run. Unpark the waiting threads now
          */
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "Message handler ready");
+            log::info!("message handler ready");
         }
         self.ready_signal.signal();
 
         while let Some(message) = self.message_rx.recv().await {
             if DEBUG_LOGGER {
-                log::info!(target:"NSLogger", "[{:?}] Received message", std::thread::current().id());
+                log::info!("[{:?}] received message", std::thread::current().id());
             }
 
             match message {
@@ -59,7 +59,7 @@ impl MessageHandler {
                         .copy_from_slice(&self.sequence_generator.to_be_bytes());
                     self.sequence_generator += 1;
                     if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "adding log {} to the queue", message.sequence_number);
+                        log::info!("adding log {} to the queue", message.sequence_number);
                     }
 
                     let mut local_shared_state = self.shared_state.lock().unwrap();
@@ -68,14 +68,14 @@ impl MessageHandler {
                 }
                 Message::ConnectionModeChange(new_mode) => {
                     if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "options change received");
+                        log::info!("options change received");
                     }
 
                     self.shared_state.lock().unwrap().change_options(new_mode)?;
                 }
                 Message::TryConnectBonjour(service_type, host, port, use_ssl) => {
                     if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "connecting with Bonjour setup service={service_type}, host={host}, port={port}");
+                        log::info!("connecting with Bonjour setup service={service_type}, host={host}, port={port}");
                     }
 
                     let mut local_shared_state = self.shared_state.lock().unwrap();
@@ -88,7 +88,7 @@ impl MessageHandler {
         }
 
         if DEBUG_LOGGER {
-            log::info!(target:"NSLogger", "leaving message handler loop");
+            log::info!("leaving message handler loop");
         }
         Ok(())
     }
