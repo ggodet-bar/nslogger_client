@@ -83,7 +83,6 @@ impl Logger {
                 if #[cfg(test)] {
                     fn init_test_logger() {
                         START.call_once(|| {
-
                             env_logger::init() ;
                         }) ;
                         log::info!(target:"NSLogger", "NSLogger client started") ;
@@ -259,14 +258,14 @@ impl Logger {
         }
     }
 
-    fn send_and_flush(&self, log_message: LogMessage) -> Result<(), Error> {
+    fn send_and_flush(&self, log_message: LogMessage) {
         let flush_signal = self.flush_messages.then(|| Signal::default());
         self.message_tx
             .send(Message::AddLog(log_message, flush_signal.clone()))
-            .map_err(|_| Error::ChannelNotAvailable)?;
+            .unwrap();
 
         let Some(signal) = flush_signal else {
-            return Ok(());
+            return;
         };
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "waiting for message flush");
@@ -275,7 +274,6 @@ impl Logger {
         if DEBUG_LOGGER {
             log::info!(target:"NSLogger", "message flush ack received");
         }
-        Ok(())
     }
 }
 

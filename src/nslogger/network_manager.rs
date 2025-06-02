@@ -9,11 +9,6 @@ use tokio::{
 
 use crate::nslogger::{logger_state::Message, DEBUG_LOGGER};
 
-pub enum Command {
-    SetupBonjour(BonjourServiceType),
-    Quit,
-}
-
 pub enum BonjourServiceStatus {
     ServiceFound(String, String, u16, bool),
     TimedOut,
@@ -21,7 +16,7 @@ pub enum BonjourServiceStatus {
 }
 
 pub struct NetworkManager {
-    command_rx: mpsc::UnboundedReceiver<Command>,
+    command_rx: mpsc::UnboundedReceiver<BonjourServiceType>,
     message_tx: mpsc::UnboundedSender<Message>,
 
     bonjour_service: BonjourService,
@@ -29,7 +24,7 @@ pub struct NetworkManager {
 
 impl NetworkManager {
     pub fn new(
-        command_rx: mpsc::UnboundedReceiver<Command>,
+        command_rx: mpsc::UnboundedReceiver<BonjourServiceType>,
         message_tx: mpsc::UnboundedSender<Message>,
     ) -> NetworkManager {
         NetworkManager {
@@ -45,46 +40,35 @@ impl NetworkManager {
             log::info!(target:"NSLogger", "starting network manager");
         }
 
-        while let Some(message) = &self.command_rx.recv().await {
+        // TODO Pass a signal to quit the service
+        while let Some(service_type) = &self.command_rx.recv().await {
             if DEBUG_LOGGER {
                 log::info!(target:"NSLogger", "network manager received message");
             }
-
-            match message {
-                Command::SetupBonjour(service_type) => {
-                    let mut is_connected = false;
-                    while !is_connected {
-                        match self.bonjour_service.setup_bonjour(service_type).await? {
-                            BonjourServiceStatus::ServiceFound(
-                                bonjour_service_name,
-                                host,
-                                port,
-                                use_ssl,
-                            ) => {
-                                self.message_tx.send(Message::TryConnectBonjour(
-                                    bonjour_service_name,
-                                    host,
-                                    port,
-                                    use_ssl,
-                                ));
-                                is_connected = true;
-                            }
-                            _ => {
-                                if DEBUG_LOGGER {
-                                    log::info!(target:"NSLogger", "couldn't resolve Bonjour. Will retry in a few seconds");
-                                }
-
-                                sleep(Duration::from_secs(5)).await
-                            }
+            let mut is_connected = false;
+            while !is_connected {
+                match self.bonjour_service.setup_bonjour(service_type).await? {
+                    BonjourServiceStatus::ServiceFound(
+                        bonjour_service_name,
+                        host,
+                        port,
+                        use_ssl,
+                    ) => {
+                        self.message_tx.send(Message::TryConnectBonjour(
+                            bonjour_service_name,
+                            host,
+                            port,
+                            use_ssl,
+                        ));
+                        is_connected = true;
+                    }
+                    _ => {
+                        if DEBUG_LOGGER {
+                            log::info!(target:"NSLogger", "couldn't resolve Bonjour. Will retry in a few seconds");
                         }
-                    }
-                }
-                Command::Quit => {
-                    if DEBUG_LOGGER {
-                        log::info!(target:"NSLogger", "properly exiting the network manager");
-                    }
 
-                    break;
+                        sleep(Duration::from_secs(5)).await
+                    }
                 }
             }
         }

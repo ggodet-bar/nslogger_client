@@ -20,10 +20,8 @@ use tokio::{
 };
 
 use crate::nslogger::{
-    log_message::LogMessage,
-    network_manager,
-    network_manager::{BonjourServiceType, Command},
-    Error, MessageWorker, Signal, DEBUG_LOGGER,
+    log_message::LogMessage, network_manager, network_manager::BonjourServiceType, Error,
+    MessageWorker, Signal, DEBUG_LOGGER,
 };
 
 #[derive(Debug)]
@@ -80,9 +78,8 @@ pub struct LoggerState {
     pub connection_mode: ConnectionMode,
     pub write_stream: Option<WriteStreamWrapper>,
     pub log_messages: VecDeque<(LogMessage, Option<Signal>)>,
-    message_tx: mpsc::UnboundedSender<Message>,
-    command_tx: mpsc::UnboundedSender<network_manager::Command>,
-    runtime: Runtime,
+    command_tx: mpsc::UnboundedSender<network_manager::BonjourServiceType>,
+    runtime: Option<Runtime>,
 }
 
 impl LoggerState {
@@ -101,14 +98,15 @@ impl LoggerState {
             is_connected: false,
             is_client_info_added: false,
             log_messages: VecDeque::new(),
-            message_tx: message_tx.clone(),
             command_tx,
-            runtime: Builder::new_multi_thread()
-                .enable_io()
-                .enable_time()
-                .build()?,
+            runtime: Some(
+                Builder::new_multi_thread()
+                    .enable_io()
+                    .enable_time()
+                    .build()?,
+            ),
         };
-        Self::setup_network_manager(message_tx, command_rx, &state.runtime)?;
+        Self::setup_network_manager(message_tx, command_rx, &state.runtime.as_ref().unwrap())?;
         let state = Arc::new(Mutex::new(state));
         Self::setup_message_worker(state.clone(), message_rx, ready_signal)?;
         Ok(state)
@@ -135,7 +133,7 @@ impl LoggerState {
         }
 
         if self.is_connected {
-            self.write_messages_to_stream();
+            self.write_messages_to_stream()?;
         }
 
         if DEBUG_LOGGER {
@@ -146,7 +144,7 @@ impl LoggerState {
 
     fn setup_network_manager(
         message_tx: mpsc::UnboundedSender<Message>,
-        command_rx: mpsc::UnboundedReceiver<Command>,
+        command_rx: mpsc::UnboundedReceiver<BonjourServiceType>,
         runtime: &Runtime,
     ) -> Result<(), Error> {
         runtime.spawn(async move {
@@ -163,7 +161,9 @@ impl LoggerState {
         ready_signal: Signal,
     ) -> Result<(), Error> {
         let local_state = state.clone();
-        let runtime = &(*local_state.lock().unwrap()).runtime;
+        let Some(runtime) = &(*local_state.lock().unwrap()).runtime else {
+            return Ok(());
+        };
         runtime.spawn(async {
             MessageWorker::new(state, message_rx, ready_signal)
                 .run()
@@ -196,9 +196,7 @@ impl LoggerState {
 
     pub fn browse_bonjour_services(&mut self, use_ssl: bool) -> Result<(), Error> {
         self.command_tx
-            .send(network_manager::Command::SetupBonjour(
-                network_manager::BonjourServiceType::Default(use_ssl),
-            ))
+            .send(network_manager::BonjourServiceType::Default(use_ssl))
             .map_err(|_| Error::ChannelNotAvailable)?;
 
         self.is_connecting = true;
@@ -363,6 +361,6 @@ impl Drop for LoggerState {
             log::info!(target:"NSLogger", "calling drop for logger state");
         }
         self.disconnect();
-        self.command_tx.send(network_manager::Command::Quit);
+        self.runtime.take().unwrap().shutdown_background();
     }
 }
