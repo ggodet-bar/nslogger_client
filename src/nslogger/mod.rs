@@ -30,8 +30,8 @@ pub use self::log_message::{Domain, Level};
 pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
-    log_worker::LogWorker,
-    logger_state::{ConnectionMode, LoggerState, Message},
+    log_worker::{ConnectionMode, LogWorker, Message},
+    logger_state::LoggerState,
     network_manager::BonjourServiceType,
 };
 
@@ -107,8 +107,11 @@ impl Logger {
 
     pub fn with_options(mode: ConnectionMode, flush_messages: bool) -> Result<Self, Error> {
         let mut logger = Logger::new()?;
-        logger.shared_state.lock().unwrap().connection_mode = mode;
         logger.flush_messages = flush_messages;
+        logger
+            .message_tx
+            .send(Message::ConnectionModeChange(mode))
+            .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(logger)
     }
 

@@ -7,7 +7,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::nslogger::{logger_state::Message, DEBUG_LOGGER};
+use crate::nslogger::{Message, DEBUG_LOGGER};
 
 pub enum BonjourServiceStatus {
     ServiceFound(String, String, u16, bool),
