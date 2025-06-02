@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, LazyLock, Mutex},
 };
 
 use cfg_if::cfg_if;
@@ -20,6 +20,9 @@ use env_logger;
 #[cfg(test)]
 static START: Once = Once::new();
 
+static RUNTIME: LazyLock<ReferenceCountedRuntime> =
+    LazyLock::new(|| ReferenceCountedRuntime::new().unwrap());
+
 mod log_message;
 mod log_worker;
 mod logger_state;
@@ -31,7 +34,7 @@ pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
     log_worker::{ConnectionMode, LogWorker, Message},
-    logger_state::LoggerState,
+    logger_state::ReferenceCountedRuntime,
     network_manager::BonjourServiceType,
 };
 
@@ -68,7 +71,6 @@ pub enum Error {
 }
 
 pub struct Logger {
-    shared_state: Arc<Mutex<LoggerState>>,
     ready_signal: Signal,
     message_tx: mpsc::UnboundedSender<Message>,
     /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer)
@@ -94,11 +96,9 @@ impl Logger {
 
             init_test_logger();
         }
-        let (message_tx, message_rx) = mpsc::unbounded_channel();
-        let ready_signal = Signal::default();
+        let (ready_signal, message_tx) = (*RUNTIME).get_signal_and_sender();
 
         Ok(Logger {
-            shared_state: LoggerState::new(message_tx.clone(), message_rx, ready_signal.clone())?,
             message_tx,
             ready_signal,
             flush_messages: false,
@@ -279,16 +279,6 @@ impl Logger {
     }
 }
 
-impl Drop for Logger {
-    fn drop(&mut self) {
-        if DEBUG_LOGGER {
-            log::info!("calling drop for logger instance");
-        }
-
-        self.message_tx.send(Message::Quit).unwrap();
-    }
-}
-
 impl log::Log for Logger {
     fn enabled(&self, _: &log::LogMetadata) -> bool {
         true
@@ -309,7 +299,3 @@ impl log::Log for Logger {
         );
     }
 }
-
-unsafe impl Sync for Logger {}
-
-unsafe impl Send for Logger {}

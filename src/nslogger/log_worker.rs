@@ -26,7 +26,6 @@ pub enum Message {
     TryConnectBonjour(String, String, u16, bool),
     AddLog(LogMessage, Option<Signal>),
     ConnectionModeChange(ConnectionMode),
-    Quit,
 }
 
 #[derive(Debug, Clone)]
@@ -130,7 +129,48 @@ impl LogWorker {
         if DEBUG_LOGGER {
             log::info!("stopped log event loop");
         }
-        self.close_buffer_write_stream()?;
+        Ok(())
+    }
+
+    fn handle_message(&mut self, message: Message) -> Result<(), Error> {
+        if DEBUG_LOGGER {
+            log::info!("[{:?}] received message", std::thread::current().id());
+        }
+
+        match message {
+            Message::AddLog(mut message, signal) => {
+                /*
+                 * Sequence number is set on receiving the message in the handler to
+                 * guarantee a strictly monotonic sequence.
+                 */
+                message.sequence_number = self.sequence_generator;
+                message.data[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
+                    .copy_from_slice(&self.sequence_generator.to_be_bytes());
+                self.sequence_generator += 1;
+                if DEBUG_LOGGER {
+                    log::info!("adding log {} to the queue", message.sequence_number);
+                }
+
+                self.log_messages.push_back((message, signal));
+                self.process_log_queue()?;
+            }
+            Message::ConnectionModeChange(new_mode) => {
+                if DEBUG_LOGGER {
+                    log::info!("options change received");
+                }
+
+                self.change_options(new_mode)?;
+            }
+            Message::TryConnectBonjour(service_type, host, port, use_ssl) => {
+                if DEBUG_LOGGER {
+                    log::info!("connecting with Bonjour setup service={service_type}, host={host}, port={port}");
+                }
+
+                let stream = self.connect_to_remote(&host, port, use_ssl)?;
+                self.write_stream = Some(stream);
+                self.process_log_queue()?;
+            }
+        }
         Ok(())
     }
 
@@ -138,58 +178,14 @@ impl LogWorker {
         /*
          * We are ready to run. Unpark the waiting threads now
          */
-        if DEBUG_LOGGER {
-            log::info!("message handler ready");
-        }
         self.ready_signal.signal();
 
         while let Some(message) = self.message_rx.recv().await {
-            if DEBUG_LOGGER {
-                log::info!("[{:?}] received message", std::thread::current().id());
-            }
-
-            match message {
-                Message::AddLog(mut message, signal) => {
-                    /*
-                     * Sequence number is set on receiving the message in the handler to
-                     * guarantee a strictly monotonic sequence.
-                     */
-                    message.sequence_number = self.sequence_generator;
-                    message.data[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
-                        .copy_from_slice(&self.sequence_generator.to_be_bytes());
-                    self.sequence_generator += 1;
-                    if DEBUG_LOGGER {
-                        log::info!("adding log {} to the queue", message.sequence_number);
-                    }
-
-                    self.log_messages.push_back((message, signal));
-                    self.process_log_queue()?;
-                }
-                Message::ConnectionModeChange(new_mode) => {
-                    if DEBUG_LOGGER {
-                        log::info!("options change received");
-                    }
-
-                    self.change_options(new_mode)?;
-                }
-                Message::TryConnectBonjour(service_type, host, port, use_ssl) => {
-                    if DEBUG_LOGGER {
-                        log::info!("connecting with Bonjour setup service={service_type}, host={host}, port={port}");
-                    }
-
-                    let stream = self.connect_to_remote(&host, port, use_ssl)?;
-                    self.write_stream = Some(stream);
-                    self.process_log_queue()?;
-                }
-                Message::Quit => {
-                    break;
-                }
-            }
+            self.handle_message(message)?;
         }
 
-        if DEBUG_LOGGER {
-            log::info!("leaving message handler loop");
-        }
+        self.close_buffer_write_stream()?;
+
         Ok(())
     }
 
@@ -271,6 +267,7 @@ impl LogWorker {
 
         self.connection_state = ConnectionState::Disconnected;
         self.write_stream = None;
+        self.sequence_generator = 1;
     }
 
     pub fn setup_connection(&mut self) -> Result<(), Error> {
@@ -407,6 +404,9 @@ impl Drop for LogWorker {
     fn drop(&mut self) {
         if DEBUG_LOGGER {
             log::info!("calling drop for log worker");
+        }
+        if let Some(mut stream) = self.write_stream.take() {
+            stream.flush().unwrap();
         }
         self.disconnect();
     }

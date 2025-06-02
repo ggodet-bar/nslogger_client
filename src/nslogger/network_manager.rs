@@ -81,7 +81,7 @@ impl NetworkManager {
         }
 
         if DEBUG_LOGGER {
-            log::info!("stopping network manager");
+            log::info!("exiting network manager");
         }
         Ok(())
     }

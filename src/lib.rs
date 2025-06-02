@@ -69,6 +69,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 mod tests {
     use std::{fs::File, io::Read, time::Duration};
 
+    use serial_test::serial;
     use tempfile::NamedTempFile;
 
     use crate::nslogger::{
@@ -77,6 +78,7 @@ mod tests {
     };
 
     #[test]
+    #[serial]
     fn connects_via_bonjour_with_ssl() {
         let log = Logger::new().expect("logger instance");
         //log.set_message_flushing(true) ;
@@ -91,6 +93,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn creates_logger_instance() {
         let log = Logger::new().expect("logger instance");
         log.logm(Some(Domain::App), Level::Warning, "test");
@@ -105,10 +108,11 @@ mod tests {
             "Tag test!",
         );
         log.log("Just a simple message");
-        std::thread::sleep(Duration::from_secs(6));
+        std::thread::sleep(Duration::from_secs(2));
     }
 
     #[test]
+    #[serial]
     fn logs_empty_domain() {
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
@@ -117,6 +121,7 @@ mod tests {
             Level::Warning,
             "no domain should appear",
         );
+        std::thread::sleep(Duration::from_secs(2));
     }
 
     #[test]
@@ -131,6 +136,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn logs_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let file_path = tempfile.into_temp_path();
@@ -216,6 +222,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn switches_from_file_to_bonjour() {
         let tempfile = NamedTempFile::new().expect("temp file");
 
@@ -236,7 +243,9 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn switches_from_bonjour_to_file() {
+        let tempfile = NamedTempFile::new().expect("temp file");
         let mut log = Logger::new().expect("logger instance");
         log.logm(
             Some(Domain::App),
@@ -245,7 +254,8 @@ mod tests {
         );
 
         log.set_message_flushing(true);
-        log.set_log_file_path("/tmp/ns_logger.rawnsloggerdata"); // File extension is constrained!!
+        log.set_log_file_path(tempfile.into_temp_path().to_str().unwrap())
+            .expect("setting file path"); // File extension is constrained!!
         log.logm(
             Some(Domain::App),
             Level::Warning,
@@ -254,11 +264,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn flushes_log_messages() {
         // TODO a better approach would probably be to write a small thread that crashes, with a
         // message that has to be passed before the crash?
         let mut log = Logger::new().expect("logger instance");
-        log.set_remote_host("127.0.0.1", 50000, true); // SSL Will be on on the desktop client no matter the setting
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warning, "flush test");
         log.logm(Some(Domain::DB), Level::Error, "flush test1");
@@ -269,10 +279,9 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn logs_mark() {
         let mut log = Logger::new().expect("logger instance");
-        log.set_remote_host("127.0.0.1", 50000, true)
-            .expect("setting host");
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warning, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
@@ -281,9 +290,9 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn logs_empty_mark() {
         let mut log = Logger::new().expect("logger instance");
-        log.set_remote_host("127.0.0.1", 50000, true);
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warning, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
@@ -292,6 +301,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn logs_image() {
         use std::{env, fs::File, io::Read};
         let image_path = &env::current_dir().unwrap().join("tests/fixtures/zebra.png");
@@ -301,18 +311,17 @@ mod tests {
         file_handle.read_to_end(&mut buffer).unwrap();
 
         let mut log = Logger::new().expect("logger instance");
-        log.set_remote_host("127.0.0.1", 50000, true);
         log.set_message_flushing(true);
         log.log_image(None, None, None, None, Level::Warning, &buffer);
     }
 
     #[test]
+    #[serial]
     fn logs_binary_data() {
         let bytes: [u8; 8] = [0x6c, 0x6f, 0x67, 0x20, 0x74, 0x65, 0x73, 0x74];
         // should read 'log test'
 
         let mut log = Logger::new().expect("logger instance");
-        log.set_remote_host("127.0.0.1", 50000, true);
         log.set_message_flushing(true);
         log.log_data(None, None, None, None, Level::Warning, &bytes);
     }
