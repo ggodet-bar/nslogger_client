@@ -31,7 +31,7 @@ impl NetworkManager {
             command_rx,
             message_tx,
 
-            bonjour_service: BonjourService::default(),
+            bonjour_service: BonjourService,
         }
     }
 

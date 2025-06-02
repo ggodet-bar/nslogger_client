@@ -35,20 +35,21 @@ impl FromStr for Domain {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Domain, ()> {
-        match s {
-            "App" => return Ok(Domain::App),
-            "View" => return Ok(Domain::View),
-            "Layout" => return Ok(Domain::Layout),
-            "Controller" => return Ok(Domain::Controller),
-            "Routing" => return Ok(Domain::Routing),
-            "Service" => return Ok(Domain::Service),
-            "Network" => return Ok(Domain::Network),
-            "Model" => return Ok(Domain::Model),
-            "Cache" => return Ok(Domain::Cache),
-            "DB" => return Ok(Domain::DB),
-            "IO" => return Ok(Domain::IO),
-            _ => return Ok(Domain::Custom(s.to_string())),
-        }
+        let domain = match s {
+            "App" => Domain::App,
+            "View" => Domain::View,
+            "Layout" => Domain::Layout,
+            "Controller" => Domain::Controller,
+            "Routing" => Domain::Routing,
+            "Service" => Domain::Service,
+            "Network" => Domain::Network,
+            "Model" => Domain::Model,
+            "Cache" => Domain::Cache,
+            "DB" => Domain::DB,
+            "IO" => Domain::IO,
+            _ => Domain::Custom(s.to_string()),
+        };
+        Ok(domain)
     }
 }
 
@@ -227,21 +228,21 @@ impl LogMessage {
     pub fn add_int64(&mut self, key: MessagePartKey, value: u64) {
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int64 as u8).unwrap();
-        self.data.write_u64::<BigEndian>(value as u64).unwrap();
+        self.data.write_u64::<BigEndian>(value).unwrap();
         self.part_count += 1;
     }
 
     pub fn add_int32(&mut self, key: MessagePartKey, value: u32) {
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int32 as u8).unwrap();
-        self.data.write_u32::<BigEndian>(value as u32).unwrap();
+        self.data.write_u32::<BigEndian>(value).unwrap();
         self.part_count += 1;
     }
 
     pub fn add_int16(&mut self, key: MessagePartKey, value: u16) {
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int16 as u8).unwrap();
-        self.data.write_u16::<BigEndian>(value as u16).unwrap();
+        self.data.write_u16::<BigEndian>(value).unwrap();
         self.part_count += 1;
     }
 

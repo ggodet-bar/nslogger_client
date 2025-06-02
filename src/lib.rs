@@ -24,7 +24,7 @@ pub use nslogger::Logger;
 fn parse_env() -> (ConnectionMode, bool) {
     let connection_mode = if let Ok(val) = env::var("LOG_FILENAME") {
         PathBuf::from_str(&val)
-            .map(|path| ConnectionMode::File(path))
+            .map(ConnectionMode::File)
             .unwrap_or_default()
     } else {
         let use_ssl = env::var("LOG_USE_SSL")

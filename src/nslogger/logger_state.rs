@@ -31,12 +31,12 @@ impl LoggerState {
                     .build()?,
             ),
         };
-        Self::setup_network_manager(message_tx, command_rx, &state.runtime.as_ref().unwrap())?;
+        Self::setup_network_manager(message_tx, command_rx, state.runtime.as_ref().unwrap())?;
         Self::setup_message_worker(
             command_tx,
             message_rx,
             ready_signal,
-            &state.runtime.as_ref().unwrap(),
+            state.runtime.as_ref().unwrap(),
         )?;
         Ok(Arc::new(Mutex::new(state)))
     }

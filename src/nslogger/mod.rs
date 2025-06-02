@@ -97,12 +97,12 @@ impl Logger {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let ready_signal = Signal::default();
 
-        return Ok(Logger {
+        Ok(Logger {
             shared_state: LoggerState::new(message_tx.clone(), message_rx, ready_signal.clone())?,
             message_tx,
             ready_signal,
             flush_messages: false,
-        });
+        })
     }
 
     pub fn with_options(mode: ConnectionMode, flush_messages: bool) -> Result<Self, Error> {
@@ -261,7 +261,7 @@ impl Logger {
     }
 
     fn send_and_flush(&self, log_message: LogMessage) {
-        let flush_signal = self.flush_messages.then(|| Signal::default());
+        let flush_signal = self.flush_messages.then(Signal::default);
         self.message_tx
             .send(Message::AddLog(log_message, flush_signal.clone()))
             .unwrap();
