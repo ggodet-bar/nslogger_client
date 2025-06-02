@@ -6,7 +6,6 @@ use std::{
     net::TcpStream,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    thread,
 };
 
 use log::log;
@@ -70,11 +69,17 @@ impl std::io::Write for WriteStreamWrapper {
     }
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+enum ConnectionState {
+    #[default]
+    Disconnected,
+    Connecting,
+    Connected,
+    Ready,
+}
+
 pub struct LoggerState {
-    pub is_reconnection_scheduled: bool,
-    pub is_connecting: bool,
-    pub is_connected: bool,
-    pub is_client_info_added: bool,
+    connection_state: ConnectionState,
     pub connection_mode: ConnectionMode,
     pub write_stream: Option<WriteStreamWrapper>,
     pub log_messages: VecDeque<(LogMessage, Option<Signal>)>,
@@ -93,10 +98,7 @@ impl LoggerState {
         let state = LoggerState {
             connection_mode: ConnectionMode::default(),
             write_stream: None,
-            is_reconnection_scheduled: false,
-            is_connecting: false,
-            is_connected: false,
-            is_client_info_added: false,
+            connection_state: ConnectionState::default(),
             log_messages: VecDeque::new(),
             command_tx,
             runtime: Some(
@@ -124,23 +126,18 @@ impl LoggerState {
             log::info!("process_log_queue");
         }
 
-        if !self.is_client_info_added {
-            self.push_client_info_to_front_of_queue();
-        }
-
-        if self.write_stream.is_none() {
+        if self.connection_state == ConnectionState::Disconnected {
             self.setup_connection()?;
         }
-
-        if self.is_connected {
+        if self.connection_state == ConnectionState::Connected {
+            self.push_client_info_to_front_of_queue();
+        }
+        if self.connection_state == ConnectionState::Ready {
             self.write_messages_to_stream()?;
         }
 
         if DEBUG_LOGGER {
-            log::info!(
-                "[{:?}] finished processing log queue",
-                thread::current().id()
-            );
+            log::info!("finished processing log queue",);
         }
         Ok(())
     }
@@ -182,7 +179,7 @@ impl LoggerState {
 
         self.log_messages
             .push_front((LogMessage::client_info(), None));
-        self.is_client_info_added = true;
+        self.connection_state = ConnectionState::Ready;
     }
 
     pub fn change_options(&mut self, mode: ConnectionMode) -> Result<(), Error> {
@@ -202,7 +199,7 @@ impl LoggerState {
             .send(network_manager::BonjourServiceType::Default(use_ssl))
             .map_err(|_| Error::ChannelNotAvailable)?;
 
-        self.is_connecting = true;
+        self.connection_state = ConnectionState::Connecting;
 
         Ok(())
     }
@@ -241,8 +238,7 @@ impl LoggerState {
             WriteStreamWrapper::Tcp(stream)
         };
 
-        self.is_connecting = false;
-        self.is_connected = true;
+        self.connection_state = ConnectionState::Connected;
 
         Ok(stream)
     }
@@ -252,10 +248,7 @@ impl LoggerState {
             log::info!("disconnect_from_remote()");
         }
 
-        self.is_connected = false;
-        self.is_connecting = false;
-        self.is_client_info_added = false;
-
+        self.connection_state = ConnectionState::Disconnected;
         self.write_stream = None;
     }
 
@@ -266,13 +259,13 @@ impl LoggerState {
                 self.write_stream = Some(stream);
             }
             ConnectionMode::Tcp(host, port, use_ssl)
-                if !(self.is_connecting || self.is_reconnection_scheduled) =>
+                if self.connection_state == ConnectionState::Disconnected =>
             {
                 let stream = self.connect_to_remote(&host, port, use_ssl)?;
                 self.write_stream = Some(stream);
             }
             ConnectionMode::Bonjour(BonjourServiceType::Default(use_ssl))
-                if !(self.is_connecting || self.is_reconnection_scheduled) =>
+                if self.connection_state == ConnectionState::Disconnected =>
             {
                 self.browse_bonjour_services(use_ssl)?;
             }
@@ -284,7 +277,7 @@ impl LoggerState {
     }
 
     fn try_reconnecting(&mut self) -> Result<(), Error> {
-        if self.is_reconnection_scheduled {
+        if self.connection_state != ConnectionState::Disconnected {
             return Ok(());
         }
 
@@ -302,7 +295,7 @@ impl LoggerState {
         }
 
         let file_writer = BufWriter::new(File::create(path)?);
-        self.is_connected = true;
+        self.connection_state = ConnectionState::Connected;
         Ok(WriteStreamWrapper::File(file_writer))
     }
 
@@ -314,7 +307,7 @@ impl LoggerState {
         if let Some(mut stream) = self.write_stream.take() {
             stream.flush()?;
         };
-        self.is_client_info_added = false;
+        self.connection_state = ConnectionState::Disconnected;
         Ok(())
     }
 

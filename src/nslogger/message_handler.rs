@@ -79,7 +79,9 @@ impl MessageHandler {
                     }
 
                     let mut local_shared_state = self.shared_state.lock().unwrap();
-                    local_shared_state.connect_to_remote(&host, port, use_ssl)?;
+                    let stream = local_shared_state.connect_to_remote(&host, port, use_ssl)?;
+                    local_shared_state.write_stream = Some(stream);
+                    local_shared_state.process_log_queue()?;
                 }
                 Message::Quit => {
                     break;
