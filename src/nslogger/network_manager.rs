@@ -43,7 +43,6 @@ impl NetworkManager {
             log::info!("starting network manager");
         }
 
-        // TODO Pass a signal to quit the service
         while let Some(service_type) = &self.command_rx.recv().await {
             if DEBUG_LOGGER {
                 log::info!("network manager received message");
@@ -57,14 +56,11 @@ impl NetworkManager {
                         port,
                         use_ssl,
                     ) => {
-                        log::info!("found Bonjour service {bonjour_service_name}");
+                        if DEBUG_LOGGER {
+                            log::info!("found Bonjour service {bonjour_service_name}");
+                        }
                         self.message_tx
-                            .send(Message::ConnectToBonjourService(
-                                bonjour_service_name,
-                                host,
-                                port,
-                                use_ssl,
-                            ))
+                            .send(Message::ConnectToBonjourService(host, port, use_ssl))
                             .unwrap();
                         is_connected = true;
                     }

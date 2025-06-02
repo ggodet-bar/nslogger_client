@@ -22,7 +22,7 @@ use crate::nslogger::{
 
 #[derive(Debug)]
 pub enum Message {
-    ConnectToBonjourService(String, String, u16, bool),
+    ConnectToBonjourService(String, u16, bool),
     AddLog(LogMessage, Option<Signal>),
     SwitchConnection(ConnectionMode),
 }
@@ -156,7 +156,7 @@ impl LogWorker {
             Message::SwitchConnection(new_mode) => {
                 self.change_options(new_mode)?;
             }
-            Message::ConnectToBonjourService(service_type, host, port, use_ssl) => {
+            Message::ConnectToBonjourService(host, port, use_ssl) => {
                 let stream = self.connect_to_remote(&host, port, use_ssl)?;
                 self.write_stream = Some(stream);
                 self.process_log_queue()?;

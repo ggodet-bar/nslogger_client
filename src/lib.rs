@@ -1,18 +1,7 @@
-//! A client for NSLogger.
-//!
-//! The `Logger` is essentially a port of the [Java
-//! implementation](https://github.com/fpillet/NSLogger/blob/master/Client/Android/client-code/src/com/NSLogger/NSLoggerClient.java),
-//! initially designed for Android. Compatible with `log` (obviously without the mark, data and
-//! image logging features). Tested on version 1.8.2 of the MacOS NSLogger server.
-//!
-//! ## TODO:
-//!
-//! - networking code (setup_bonjour etc.) should probably be run on its own thread, which would
-//!   provide simple conditions for writing delayed dispatches and reconnects
-//!
-//! - opt-out of the networking features (esp. openssl)
-//! - builder pattern for logger initialization
-//! - possibly some optimizations.
+// Licensed under the MIT license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed except according to those terms.
+
+//! A client for the MacOS [NSLogger](https://github.com/fpillet/NSLogger) log viewer.
 
 use std::{env, path::PathBuf, str::FromStr};
 

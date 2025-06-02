@@ -55,6 +55,7 @@ impl FromStr for Domain {
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum MessagePartKey {
     MessageType = 0,
     TimestampS = 1, // "seconds" component of timestamp
@@ -99,6 +100,7 @@ pub(crate) enum MessagePartType {
 
 #[derive(Copy, Clone)]
 #[repr(u32)]
+#[allow(dead_code)]
 pub(crate) enum LogMessageType {
     Log = 0,    // A standard log message
     BlockStart, // The start of a "block" (a group of log entries)
@@ -185,7 +187,7 @@ impl LogMessage {
             );
 
             if let Some(nb) = line_number {
-                new_message.add_int32(MessagePartKey::LineNumber, nb as u32);
+                new_message.add_int32(MessagePartKey::LineNumber, nb);
             }
         }
 
