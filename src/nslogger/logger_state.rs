@@ -20,7 +20,7 @@ use tokio::{
 
 use crate::nslogger::{
     log_message::LogMessage, network_manager, network_manager::BonjourServiceType, Error,
-    MessageWorker, Signal, DEBUG_LOGGER,
+    LogWorker, Signal, DEBUG_LOGGER,
 };
 
 #[derive(Debug)]
@@ -164,11 +164,7 @@ impl LoggerState {
         let Some(runtime) = &(*local_state.lock().unwrap()).runtime else {
             return Ok(());
         };
-        runtime.spawn(async {
-            MessageWorker::new(state, message_rx, ready_signal)
-                .run()
-                .await
-        });
+        runtime.spawn(async { LogWorker::new(state, message_rx, ready_signal).run().await });
         Ok(())
     }
 

@@ -9,14 +9,14 @@ use crate::nslogger::{
     Error, Signal, DEBUG_LOGGER,
 };
 
-pub struct MessageWorker {
+pub struct LogWorker {
     pub shared_state: Arc<Mutex<LoggerState>>,
     message_rx: mpsc::UnboundedReceiver<Message>,
     ready_signal: Signal,
     sequence_generator: u32,
 }
 
-impl MessageWorker {
+impl LogWorker {
     pub fn new(
         shared_state: Arc<Mutex<LoggerState>>,
         message_rx: mpsc::UnboundedReceiver<Message>,

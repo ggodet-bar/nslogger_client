@@ -21,8 +21,8 @@ use env_logger;
 static START: Once = Once::new();
 
 mod log_message;
+mod log_worker;
 mod logger_state;
-mod message_worker;
 mod network_manager;
 
 pub use self::log_message::{Domain, Level};
@@ -30,8 +30,8 @@ pub use self::log_message::{Domain, Level};
 pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
+    log_worker::LogWorker,
     logger_state::{ConnectionMode, LoggerState, Message},
-    message_worker::MessageWorker,
     network_manager::BonjourServiceType,
 };
 
