@@ -22,7 +22,6 @@ static START: Once = Once::new();
 
 mod log_message;
 mod logger_state;
-mod message_handler;
 mod message_worker;
 mod network_manager;
 
