@@ -14,7 +14,7 @@ pub enum BonjourServiceStatus {
     Unresolved,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BonjourServiceType {
     /// Service type
     Custom(String, bool),

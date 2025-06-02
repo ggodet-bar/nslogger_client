@@ -24,10 +24,10 @@ use crate::nslogger::{
 pub enum Message {
     ConnectToBonjourService(String, String, u16, bool),
     AddLog(LogMessage, Option<Signal>),
-    ConnectionModeChange(ConnectionMode),
+    SwitchConnection(ConnectionMode),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionMode {
     Tcp(String, u16, bool),
     Bonjour(BonjourServiceType),
@@ -133,7 +133,7 @@ impl LogWorker {
 
     fn handle_message(&mut self, message: Message) -> Result<(), Error> {
         if DEBUG_LOGGER {
-            log::info!("[{:?}] received message", std::thread::current().id());
+            log::info!("received message");
         }
 
         match message {
@@ -153,18 +153,10 @@ impl LogWorker {
                 self.log_messages.push_back((message, signal));
                 self.process_log_queue()?;
             }
-            Message::ConnectionModeChange(new_mode) => {
-                if DEBUG_LOGGER {
-                    log::info!("options change received");
-                }
-
+            Message::SwitchConnection(new_mode) => {
                 self.change_options(new_mode)?;
             }
             Message::ConnectToBonjourService(service_type, host, port, use_ssl) => {
-                if DEBUG_LOGGER {
-                    log::info!("connecting with Bonjour setup service={service_type}, host={host}, port={port}");
-                }
-
                 let stream = self.connect_to_remote(&host, port, use_ssl)?;
                 self.write_stream = Some(stream);
                 self.process_log_queue()?;
