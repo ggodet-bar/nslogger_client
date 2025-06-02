@@ -15,6 +15,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Update package list
+      run: sudo apt-get -qq update
+    - name: install libavahi-compat-libdnssd-dev
+      run: sudo apt-get install -y libavahi-compat-libdnssd-dev
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
