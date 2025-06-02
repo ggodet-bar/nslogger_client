@@ -80,59 +80,6 @@ mod tests {
 
     #[test]
     #[serial]
-    fn creates_logger_instance() {
-        let log = Logger::new().expect("logger instance");
-        log.logm(Some(Domain::App), Level::Warn, "test");
-        log.logm(Some(Domain::DB), Level::Error, "test1");
-        log.logm(Some(Domain::DB), Level::Debug, "test2");
-        log.logm(Some(Domain::DB), Level::Warn, "test");
-        log.logm(Some(Domain::DB), Level::Error, "test1");
-        log.logm(Some(Domain::DB), Level::Debug, "test2");
-        log.logm(
-            Some(Domain::Custom("MyCustomDomain".to_string())),
-            Level::Debug,
-            "Tag test!",
-        );
-        log.log("Just a simple message");
-        std::thread::sleep(Duration::from_secs(2));
-    }
-
-    #[test]
-    #[serial]
-    fn connects_via_bonjour_with_ssl() {
-        let mut log = Logger::new().expect("logger instance");
-        log.set_message_flushing(true);
-        log.logm(Some(Domain::App), Level::Warn, "test1");
-        log.logm(Some(Domain::App), Level::Warn, "test2");
-        log.logm(Some(Domain::App), Level::Warn, "test3");
-    }
-
-    #[test]
-    #[serial]
-    fn logs_empty_domain() {
-        let mut log = Logger::new().expect("logger instance");
-        log.set_message_flushing(true);
-        log.logm(
-            Some(Domain::Custom("".to_string())),
-            Level::Warn,
-            "no domain should appear",
-        );
-        std::thread::sleep(Duration::from_secs(2));
-    }
-
-    #[test]
-    fn parses_domain_from_string() {
-        use std::str::FromStr;
-        assert_eq!(Domain::App, Domain::from_str("App").unwrap());
-        assert_eq!(Domain::DB, Domain::from_str("DB").unwrap());
-        assert_eq!(
-            Domain::Custom("CustomTag".to_string()),
-            Domain::from_str("CustomTag").unwrap()
-        );
-    }
-
-    #[test]
-    #[serial]
     fn logs_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let file_path = tempfile.into_temp_path();
@@ -217,8 +164,59 @@ mod tests {
         assert_eq!(last_msg_idx + last_msg_size + 4, buf.len());
     }
 
+    /*
+     * NOTE The following tests all rely on NSLogger to be running. As such, they ignored to
+     * avoid issues in CI.
+     */
+
     #[test]
     #[serial]
+    #[ignore]
+    fn creates_logger_instance() {
+        let log = Logger::new().expect("logger instance");
+        log.logm(Some(Domain::App), Level::Warn, "test");
+        log.logm(Some(Domain::DB), Level::Error, "test1");
+        log.logm(Some(Domain::DB), Level::Debug, "test2");
+        log.logm(Some(Domain::DB), Level::Warn, "test");
+        log.logm(Some(Domain::DB), Level::Error, "test1");
+        log.logm(Some(Domain::DB), Level::Debug, "test2");
+        log.logm(
+            Some(Domain::Custom("MyCustomDomain".to_string())),
+            Level::Debug,
+            "Tag test!",
+        );
+        log.log("Just a simple message");
+        std::thread::sleep(Duration::from_secs(2));
+    }
+
+    #[test]
+    #[serial]
+    #[ignore]
+    fn connects_via_bonjour_with_ssl() {
+        let mut log = Logger::new().expect("logger instance");
+        log.set_message_flushing(true);
+        log.logm(Some(Domain::App), Level::Warn, "test1");
+        log.logm(Some(Domain::App), Level::Warn, "test2");
+        log.logm(Some(Domain::App), Level::Warn, "test3");
+    }
+
+    #[test]
+    #[serial]
+    #[ignore]
+    fn logs_empty_domain() {
+        let mut log = Logger::new().expect("logger instance");
+        log.set_message_flushing(true);
+        log.logm(
+            Some(Domain::Custom("".to_string())),
+            Level::Warn,
+            "no domain should appear",
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+
+    #[test]
+    #[serial]
+    #[ignore]
     fn switches_from_file_to_bonjour() {
         let tempfile = NamedTempFile::new().expect("temp file");
 
@@ -240,6 +238,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn switches_from_bonjour_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let mut log = Logger::new().expect("logger instance");
@@ -261,9 +260,8 @@ mod tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn flushes_log_messages() {
-        // TODO a better approach would probably be to write a small thread that crashes, with a
-        // message that has to be passed before the crash?
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warn, "flush test");
@@ -276,6 +274,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn logs_mark() {
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
@@ -287,6 +286,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn logs_empty_mark() {
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
@@ -298,6 +298,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn logs_image() {
         use std::{env, fs::File, io::Read};
         let image_path = &env::current_dir().unwrap().join("tests/fixtures/zebra.png");
@@ -313,6 +314,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn logs_binary_data() {
         let bytes: [u8; 8] = [0x6c, 0x6f, 0x67, 0x20, 0x74, 0x65, 0x73, 0x74];
         // should read 'log test'

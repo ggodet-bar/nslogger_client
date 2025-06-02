@@ -290,4 +290,15 @@ mod tests {
         assert_eq!(5, u16::from_be_bytes(bytes[4..6].try_into().unwrap()));
         assert_eq!(38 + thread_name_len, bytes.len());
     }
+
+    #[test]
+    fn parses_domain_from_string() {
+        use std::str::FromStr;
+        assert_eq!(Domain::App, Domain::from_str("App").unwrap());
+        assert_eq!(Domain::DB, Domain::from_str("DB").unwrap());
+        assert_eq!(
+            Domain::Custom("CustomTag".to_string()),
+            Domain::from_str("CustomTag").unwrap()
+        );
+    }
 }

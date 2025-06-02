@@ -5,7 +5,13 @@ extern crate log;
 
 static START: Once = Once::new();
 
+/*
+ * NOTE The following tests all rely on NSLogger to be running. As such, they ignored to
+ * avoid issues in CI.
+ */
+
 #[test]
+#[ignore]
 fn logs_simple_messages() {
     initialize_logger();
 
@@ -16,6 +22,7 @@ fn logs_simple_messages() {
 }
 
 #[test]
+#[ignore]
 fn logs_messages_with_targets() {
     initialize_logger();
 
@@ -25,6 +32,7 @@ fn logs_messages_with_targets() {
 }
 
 #[test]
+#[ignore]
 fn logs_messages_starting_from_different_threads() {
     use std::{
         sync::{Arc, Barrier},
