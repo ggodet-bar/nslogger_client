@@ -22,7 +22,7 @@ use crate::nslogger::{
 
 #[derive(Debug)]
 pub enum Message {
-    TryConnectBonjour(String, String, u16, bool),
+    ConnectToBonjourService(String, String, u16, bool),
     AddLog(LogMessage, Option<Signal>),
     ConnectionModeChange(ConnectionMode),
 }
@@ -160,7 +160,7 @@ impl LogWorker {
 
                 self.change_options(new_mode)?;
             }
-            Message::TryConnectBonjour(service_type, host, port, use_ssl) => {
+            Message::ConnectToBonjourService(service_type, host, port, use_ssl) => {
                 if DEBUG_LOGGER {
                     log::info!("connecting with Bonjour setup service={service_type}, host={host}, port={port}");
                 }

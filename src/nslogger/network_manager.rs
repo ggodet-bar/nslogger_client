@@ -59,7 +59,7 @@ impl NetworkManager {
                     ) => {
                         log::info!("found Bonjour service {bonjour_service_name}");
                         self.message_tx
-                            .send(Message::TryConnectBonjour(
+                            .send(Message::ConnectToBonjourService(
                                 bonjour_service_name,
                                 host,
                                 port,

@@ -116,7 +116,7 @@ impl Logger {
         logger.flush_messages = flush_messages;
         logger
             .message_tx
-            .send(Message::ConnectionModeChange(mode))
+            .send(Message::SwitchConnection(mode))
             .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(logger)
     }
@@ -124,7 +124,7 @@ impl Logger {
     pub fn set_bonjour_service(&mut self, service: BonjourServiceType) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Bonjour(service);
         self.message_tx
-            .send(Message::ConnectionModeChange(connection_mode))
+            .send(Message::SwitchConnection(connection_mode))
             .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(())
     }
@@ -137,7 +137,7 @@ impl Logger {
     ) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Tcp(host_name.to_string(), host_port, use_ssl);
         self.message_tx
-            .send(Message::ConnectionModeChange(connection_mode))
+            .send(Message::SwitchConnection(connection_mode))
             .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(())
     }
@@ -147,7 +147,7 @@ impl Logger {
             PathBuf::from_str(file_path).map_err(|_| Error::InvalidPath(file_path.to_string()))?,
         );
         self.message_tx
-            .send(Message::ConnectionModeChange(connection_mode))
+            .send(Message::SwitchConnection(connection_mode))
             .map_err(|_| Error::ChannelNotAvailable)?;
         Ok(())
     }

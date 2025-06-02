@@ -281,6 +281,7 @@ mod tests {
         let mut msg = LogMessage::new(LogMessageType::Log);
         assert_eq!(5, msg.part_count);
         assert_eq!(38 + thread_name_len, msg.data.len());
+        assert_eq!(&[0_u8; 6], &msg.data[..6]);
         msg.freeze();
         let bytes = msg.data;
         assert_eq!(
