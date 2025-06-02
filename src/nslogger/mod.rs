@@ -27,7 +27,6 @@ mod log_worker;
 mod network_manager;
 mod reference_counted_runtime;
 
-pub use self::log_message::Domain;
 #[cfg(test)]
 pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
@@ -36,6 +35,7 @@ pub(crate) use self::{
     network_manager::BonjourServiceType,
     reference_counted_runtime::ReferenceCountedRuntime,
 };
+pub use crate::nslogger::log_message::Domain;
 
 #[derive(Debug, Clone, Default)]
 pub struct Signal(Arc<(Mutex<bool>, Condvar)>);
@@ -52,10 +52,6 @@ impl Signal {
         let mut ready = self.0 .0.lock().unwrap();
         *ready = true;
         self.0 .1.notify_all();
-    }
-
-    pub fn is_triggered(&self) -> bool {
-        *self.0 .0.lock().unwrap()
     }
 }
 

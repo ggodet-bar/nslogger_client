@@ -2,13 +2,47 @@
 // option. This file may not be copied, modified, or distributed except according to those terms.
 
 //! A client for the MacOS [NSLogger](https://github.com/fpillet/NSLogger) log viewer.
-
+//!
+//!## Examples
+//!
+//!Using the `log` crate facade
+//!
+//!```rust
+//! use log::info;
+//!
+//! fn main() {
+//!  nslogger::init();
+//!
+//!  info!("this is an NSLogger message");
+//! }
+//! ```
+//!
+//!Using the `nslogger_client` API:
+//!
+//!```rust
+//! use nslogger::{Logger, Domain};
+//! use log::Level;
+//!
+//! fn main() {
+//!  let log = Logger::new().expect("a logger instance");
+//!  log.logm(Some(Domain::App), Level::Info, "starting application");
+//!  log.log_mark(None); // will display a mark with no label in the NSLogger viewer
+//!  log.logm(Some(Domain::App), Level::Info, "leaving application");
+//! }
+//! ```
+//!
+//!## NOT supported:
+//!
+//!At the moment there are no plans to add support for the following NSLogger features:
+//!
+//! - message blocks
+//! - client disconnects
 use std::{env, path::PathBuf, str::FromStr};
 
-pub mod nslogger;
+mod nslogger;
 
 use nslogger::ConnectionMode;
-pub use nslogger::Logger;
+pub use nslogger::{Domain, Logger};
 
 /// Parses the environment variables to identify the max logging level, the type of connection to
 /// NSLogger (or the log file path), and whether the logger should wait for each message to be
