@@ -6,7 +6,6 @@ use std::{
 
 use cfg_if::cfg_if;
 use chrono;
-use log::log;
 use tokio::sync::mpsc;
 
 const DEBUG_LOGGER: bool = true & cfg!(test);
@@ -28,7 +27,7 @@ mod log_worker;
 mod logger_state;
 mod network_manager;
 
-pub use self::log_message::{Domain, Level};
+pub use self::log_message::Domain;
 #[cfg(test)]
 pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
@@ -73,6 +72,7 @@ pub enum Error {
 pub struct Logger {
     ready_signal: Signal,
     message_tx: mpsc::UnboundedSender<Message>,
+    filter: log::LevelFilter,
     /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer)
     flush_messages: bool,
 }
@@ -101,12 +101,18 @@ impl Logger {
         Ok(Logger {
             message_tx,
             ready_signal,
+            filter: log::LevelFilter::Warn,
             flush_messages: false,
         })
     }
 
-    pub fn with_options(mode: ConnectionMode, flush_messages: bool) -> Result<Self, Error> {
+    pub fn with_options(
+        filter: log::LevelFilter,
+        mode: ConnectionMode,
+        flush_messages: bool,
+    ) -> Result<Self, Error> {
         let mut logger = Logger::new()?;
+        logger.filter = filter;
         logger.flush_messages = flush_messages;
         logger
             .message_tx
@@ -164,10 +170,10 @@ impl Logger {
     pub fn logl(
         &self,
         filename: Option<&Path>,
-        line_number: Option<usize>,
+        line_number: Option<u32>,
         method: Option<&str>,
         domain: Option<Domain>,
-        level: Level,
+        level: log::Level,
         message: &str,
     ) {
         let mut log_message = LogMessage::with_header(
@@ -182,12 +188,12 @@ impl Logger {
         self.inner_log(log_message);
     }
 
-    pub fn logm(&self, domain: Option<Domain>, level: Level, message: &str) {
+    pub fn logm(&self, domain: Option<Domain>, level: log::Level, message: &str) {
         self.logl(None, None, None, domain, level, message);
     }
 
     pub fn log(&self, message: &str) {
-        self.logm(None, Level::Error, message);
+        self.logm(None, log::Level::Error, message);
     }
 
     /// Log a mark to the desktop viewer.
@@ -195,8 +201,14 @@ impl Logger {
     /// Marks are important points that you can jump to directly in the desktop viewer. Message is
     /// optional, if null or empty it will be replaced with the current date / time
     pub fn log_mark(&self, message: Option<&str>) {
-        let mut log_message =
-            LogMessage::with_header(LogMessageType::Mark, None, None, None, None, Level::Error);
+        let mut log_message = LogMessage::with_header(
+            LogMessageType::Mark,
+            None,
+            None,
+            None,
+            None,
+            log::Level::Error,
+        );
 
         let mark_message = message.map(|msg| msg.to_string()).unwrap_or_else(|| {
             let time_now = chrono::Utc::now();
@@ -209,10 +221,10 @@ impl Logger {
     pub fn log_data(
         &self,
         filename: Option<&Path>,
-        line_number: Option<usize>,
+        line_number: Option<u32>,
         method: Option<&str>,
         domain: Option<Domain>,
-        level: Level,
+        level: log::Level,
         data: &[u8],
     ) {
         let mut log_message = LogMessage::with_header(
@@ -230,10 +242,10 @@ impl Logger {
     pub fn log_image(
         &self,
         filename: Option<&Path>,
-        line_number: Option<usize>,
+        line_number: Option<u32>,
         method: Option<&str>,
         domain: Option<Domain>,
-        level: Level,
+        level: log::Level,
         data: &[u8],
     ) {
         let mut log_message = LogMessage::with_header(
@@ -280,22 +292,27 @@ impl Logger {
 }
 
 impl log::Log for Logger {
-    fn enabled(&self, _: &log::LogMetadata) -> bool {
-        true
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        self.filter
+            .to_level()
+            .map(|l| l <= metadata.level())
+            .unwrap_or_default()
     }
 
-    fn log(&self, record: &log::LogRecord) {
+    fn log(&self, record: &log::Record) {
         if !self.enabled(record.metadata()) {
             return;
         }
 
         self.logl(
-            Some(Path::new(record.location().file())),
-            Some(record.location().line() as usize),
+            record.file().map(Path::new),
+            record.line(),
             None,
             Some(Domain::from_str(record.target()).unwrap()),
-            Level::from_log_level(record.level()),
+            record.level(),
             &format!("{}", record.args()),
         );
     }
+
+    fn flush(&self) {}
 }

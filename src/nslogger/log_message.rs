@@ -54,29 +54,6 @@ impl FromStr for Domain {
 }
 
 #[derive(Copy, Clone)]
-pub enum Level {
-    Error = 0,
-    Warning,
-    Important,
-    Info,
-    Debug,
-    Verbose,
-    Noise,
-}
-
-impl Level {
-    pub fn from_log_level(level: log::LogLevel) -> Level {
-        match level {
-            log::LogLevel::Error => Level::Error,
-            log::LogLevel::Warn => Level::Warning,
-            log::LogLevel::Info => Level::Info,
-            log::LogLevel::Debug => Level::Debug,
-            log::LogLevel::Trace => Level::Verbose,
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
 #[repr(u8)]
 pub enum MessagePartKey {
     MessageType = 0,
@@ -192,10 +169,10 @@ impl LogMessage {
     pub fn with_header(
         message_type: LogMessageType,
         filename: Option<&Path>,
-        line_number: Option<usize>,
+        line_number: Option<u32>,
         method: Option<&str>,
         domain: Option<Domain>,
-        level: Level,
+        level: log::Level,
     ) -> LogMessage {
         let mut new_message = LogMessage::new(message_type);
 

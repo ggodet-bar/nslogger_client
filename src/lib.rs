@@ -21,7 +21,7 @@ pub mod nslogger;
 use nslogger::ConnectionMode;
 pub use nslogger::Logger;
 
-fn parse_env() -> (ConnectionMode, bool) {
+fn parse_env() -> (log::LevelFilter, ConnectionMode, bool) {
     let connection_mode = if let Ok(val) = env::var("LOG_FILENAME") {
         PathBuf::from_str(&val)
             .map(ConnectionMode::File)
@@ -47,7 +47,9 @@ fn parse_env() -> (ConnectionMode, bool) {
     let flush_messages = env::var("LOG_FLUSH_MESSAGES")
         .map(|v| v == "1")
         .unwrap_or_default();
-    (connection_mode, flush_messages)
+    let raw_level = env::var("LOG_LEVEL").unwrap_or("WARN".to_string());
+    let level_filter = log::LevelFilter::from_str(&raw_level).unwrap_or(log::LevelFilter::Warn);
+    (level_filter, connection_mode, flush_messages)
 }
 
 /// Initializes the global logger with a Logger instance.
@@ -56,50 +58,34 @@ fn parse_env() -> (ConnectionMode, bool) {
 /// global logger may only be initialized once. Future initialization
 /// attempts will return an error.
 pub fn init() -> Result<(), log::SetLoggerError> {
-    log::set_logger(|max_log_level| {
-        max_log_level.set(log::LogLevelFilter::Info);
-        let (connection_mode, flush_messages) = parse_env();
-        let logger = Logger::with_options(connection_mode, flush_messages).unwrap();
-        //logger.set_message_flushing(true) ;
-        Box::new(logger)
-    })
+    let (filter, connection_mode, flush_messages) = parse_env();
+    let logger = Logger::with_options(filter, connection_mode, flush_messages).unwrap();
+    log::set_boxed_logger(Box::new(logger))?;
+    log::set_max_level(filter);
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use std::{fs::File, io::Read, time::Duration};
 
+    use log::Level;
     use serial_test::serial;
     use tempfile::NamedTempFile;
 
     use crate::nslogger::{
-        BonjourServiceType, Domain, Level, LogMessageType, Logger, MessagePartKey, MessagePartType,
+        BonjourServiceType, Domain, LogMessageType, Logger, MessagePartKey, MessagePartType,
         SEQUENCE_NB_OFFSET,
     };
 
     #[test]
     #[serial]
-    fn connects_via_bonjour_with_ssl() {
-        let log = Logger::new().expect("logger instance");
-        //log.set_message_flushing(true) ;
-        log.logm(Some(Domain::App), Level::Warning, "test1");
-        log.logm(Some(Domain::App), Level::Warning, "test2");
-        log.logm(Some(Domain::App), Level::Warning, "test3");
-
-        //let ten_millis = time::Duration::from_secs(50);
-        //let now = time::Instant::now();
-
-        //thread::sleep(ten_millis);
-    }
-
-    #[test]
-    #[serial]
     fn creates_logger_instance() {
         let log = Logger::new().expect("logger instance");
-        log.logm(Some(Domain::App), Level::Warning, "test");
+        log.logm(Some(Domain::App), Level::Warn, "test");
         log.logm(Some(Domain::DB), Level::Error, "test1");
         log.logm(Some(Domain::DB), Level::Debug, "test2");
-        log.logm(Some(Domain::DB), Level::Warning, "test");
+        log.logm(Some(Domain::DB), Level::Warn, "test");
         log.logm(Some(Domain::DB), Level::Error, "test1");
         log.logm(Some(Domain::DB), Level::Debug, "test2");
         log.logm(
@@ -113,12 +99,22 @@ mod tests {
 
     #[test]
     #[serial]
+    fn connects_via_bonjour_with_ssl() {
+        let mut log = Logger::new().expect("logger instance");
+        log.set_message_flushing(true);
+        log.logm(Some(Domain::App), Level::Warn, "test1");
+        log.logm(Some(Domain::App), Level::Warn, "test2");
+        log.logm(Some(Domain::App), Level::Warn, "test3");
+    }
+
+    #[test]
+    #[serial]
     fn logs_empty_domain() {
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
         log.logm(
             Some(Domain::Custom("".to_string())),
-            Level::Warning,
+            Level::Warn,
             "no domain should appear",
         );
         std::thread::sleep(Duration::from_secs(2));
@@ -145,10 +141,10 @@ mod tests {
         log.set_log_file_path(file_path.to_str().unwrap())
             .expect("setting file path"); // File extension is constrained!!
         let first_msg = "message logged to file";
-        log.logm(Some(Domain::App), Level::Warning, first_msg);
+        log.logm(Some(Domain::App), Level::Warn, first_msg);
         log.logm(
             Some(Domain::DB),
-            Level::Warning,
+            Level::Warn,
             "other message logged to file",
         );
 
@@ -229,15 +225,15 @@ mod tests {
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
         log.set_log_file_path(tempfile.into_temp_path().to_str().unwrap())
-            .expect("setting file path"); // File extension is constrained!!
-        log.logm(Some(Domain::App), Level::Warning, "message logged to file");
+            .expect("setting file path");
+        log.logm(Some(Domain::App), Level::Warn, "message logged to file");
 
         log.set_bonjour_service(BonjourServiceType::Default(false))
             .expect("setting bonjour");
         // no matter the setting
         log.logm(
             Some(Domain::App),
-            Level::Warning,
+            Level::Warn,
             "message previously logged to file",
         );
     }
@@ -249,7 +245,7 @@ mod tests {
         let mut log = Logger::new().expect("logger instance");
         log.logm(
             Some(Domain::App),
-            Level::Warning,
+            Level::Warn,
             "message first logged to Bonjour",
         );
 
@@ -258,7 +254,7 @@ mod tests {
             .expect("setting file path"); // File extension is constrained!!
         log.logm(
             Some(Domain::App),
-            Level::Warning,
+            Level::Warn,
             "message shifted from Bonjour to file",
         );
     }
@@ -270,10 +266,10 @@ mod tests {
         // message that has to be passed before the crash?
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
-        log.logm(Some(Domain::App), Level::Warning, "flush test");
+        log.logm(Some(Domain::App), Level::Warn, "flush test");
         log.logm(Some(Domain::DB), Level::Error, "flush test1");
         log.logm(Some(Domain::DB), Level::Debug, "flush test2");
-        log.logm(Some(Domain::DB), Level::Warning, "flush test");
+        log.logm(Some(Domain::DB), Level::Warn, "flush test");
         log.logm(Some(Domain::DB), Level::Error, "flush test1");
         log.logm(Some(Domain::DB), Level::Debug, "flush test2");
     }
@@ -283,7 +279,7 @@ mod tests {
     fn logs_mark() {
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
-        log.logm(Some(Domain::App), Level::Warning, "before mark 1");
+        log.logm(Some(Domain::App), Level::Warn, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
         log.log_mark(Some("this is a mark"));
         log.logm(Some(Domain::DB), Level::Debug, "after mark");
@@ -294,7 +290,7 @@ mod tests {
     fn logs_empty_mark() {
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
-        log.logm(Some(Domain::App), Level::Warning, "before mark 1");
+        log.logm(Some(Domain::App), Level::Warn, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
         log.log_mark(None);
         log.logm(Some(Domain::DB), Level::Debug, "after mark");
@@ -312,7 +308,7 @@ mod tests {
 
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
-        log.log_image(None, None, None, None, Level::Warning, &buffer);
+        log.log_image(None, None, None, None, Level::Warn, &buffer);
     }
 
     #[test]
@@ -323,6 +319,6 @@ mod tests {
 
         let mut log = Logger::new().expect("logger instance");
         log.set_message_flushing(true);
-        log.log_data(None, None, None, None, Level::Warning, &bytes);
+        log.log_data(None, None, None, None, Level::Warn, &bytes);
     }
 }

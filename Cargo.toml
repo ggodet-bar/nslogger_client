@@ -11,11 +11,11 @@ path = "src/lib.rs"
 
 [dependencies]
 async-dnssd = "0.5"
-byteorder = "1.0" # TODO Remove
+byteorder = "1.0"
 cfg-if = "1.0"
 chrono = "0.4"
 futures = "0.3"
-log = "0.3" # TODO UPDATE TO 0.4
+log = "0.4"
 mio  = "0.6"
 openssl = "0.10"
 sys-info = "0.9"
