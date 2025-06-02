@@ -1,16 +1,17 @@
-# A client for NSLogger.
+# nslogger_client
 
-[![Build Status](https://travis-ci.org/ggodet-bar/NSLoggerClient.svg?branch=master)](https://travis-ci.org/ggodet-bar/NSLoggerClient)
+[![Rust](https://github.com/ggodet-bar/NSLoggerClient/actions/workflows/rust.yml/badge.svg)](https://github.com/ggodet-bar/NSLoggerClient/actions/workflows/rust.yml)
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-The `Logger` is essentially a port of the [Java
-implementation](https://github.com/fpillet/NSLogger/blob/master/Client/Android/client-code/src/com/NSLogger/NSLoggerClient.java),
-initially designed for Android. Compatible with `log` (obviously without the mark, data and
-image logging features). Tested on version 1.8.2 of the MacOS NSLogger server.
+A Rust client for the MacOS [NSLogger](https://github.com/fpillet/NSLogger) log viewer (tested on version 1.9.7 of the app).
 
-## TODO:
+This implementation started out as a port of the [Java
+ client implementation](https://github.com/fpillet/NSLogger/blob/master/Client/Android/client-code/src/com/NSLogger/NSLoggerClient.java),
+initially designed for Android, and was later refactored to better match modern Rust coding standards. It may be used either together with the [`log`](https://docs.rs/log) crate, or directly through its API to make use of the advanced NSLogger viewing features (for images, binary data and marks).
 
-- opt-out of the networking features (esp. openssl)
-- builder pattern for logger initialization
-- possibly some optimizations.
-- Typical integration test issue: when we're not waiting for message flushes, the test completes before the bonjour search had sufficient time to complete, therefore all the messages that should have been logged are lost. In this case, the logger should fetch the buffer file's content.
+## NOT supported:
+
+At the moment there are no plans to add support for the following NSLogger features:
+
+- message blocks
+- client disconnects
