@@ -1,7 +1,6 @@
 use std::{io, net::ToSocketAddrs, time::Duration};
 
 use futures::StreamExt;
-use log::log;
 use tokio::{
     sync::mpsc,
     time::{sleep, timeout},

@@ -7,7 +7,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use log::log;
 use openssl::{
     self,
     ssl::{SslConnector, SslMethod, SslStream},

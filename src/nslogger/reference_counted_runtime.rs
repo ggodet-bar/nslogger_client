@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use log::log;
 use tokio::{
     runtime::{Builder, Runtime},
     sync::mpsc,

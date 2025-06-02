@@ -24,8 +24,8 @@ static RUNTIME: LazyLock<ReferenceCountedRuntime> =
 
 mod log_message;
 mod log_worker;
-mod logger_state;
 mod network_manager;
+mod reference_counted_runtime;
 
 pub use self::log_message::Domain;
 #[cfg(test)]
@@ -33,8 +33,8 @@ pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
     log_message::{LogMessage, LogMessageType, MessagePartKey},
     log_worker::{ConnectionMode, LogWorker, Message},
-    logger_state::ReferenceCountedRuntime,
     network_manager::BonjourServiceType,
+    reference_counted_runtime::ReferenceCountedRuntime,
 };
 
 #[derive(Debug, Clone, Default)]
