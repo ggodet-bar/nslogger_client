@@ -15,11 +15,17 @@ pub enum BonjourServiceStatus {
     Unresolved,
 }
 
+#[derive(Debug, Clone)]
+pub enum BonjourServiceType {
+    /// Service type
+    Custom(String, bool),
+    /// Defines whether to use SSL
+    Default(bool),
+}
+
 pub struct NetworkManager {
     command_rx: mpsc::UnboundedReceiver<BonjourServiceType>,
     message_tx: mpsc::UnboundedSender<Message>,
-
-    bonjour_service: BonjourService,
 }
 
 impl NetworkManager {
@@ -30,8 +36,6 @@ impl NetworkManager {
         NetworkManager {
             command_rx,
             message_tx,
-
-            bonjour_service: BonjourService,
         }
     }
 
@@ -47,7 +51,7 @@ impl NetworkManager {
             }
             let mut is_connected = false;
             while !is_connected {
-                match self.bonjour_service.setup_bonjour(service_type).await? {
+                match self.setup_bonjour(service_type).await? {
                     BonjourServiceStatus::ServiceFound(
                         bonjour_service_name,
                         host,
@@ -81,20 +85,7 @@ impl NetworkManager {
         }
         Ok(())
     }
-}
 
-#[derive(Debug, Clone)]
-pub enum BonjourServiceType {
-    /// Service type
-    Custom(String, bool),
-    /// Defines whether to use SSL
-    Default(bool),
-}
-
-#[derive(Default)]
-pub struct BonjourService;
-
-impl BonjourService {
     async fn setup_bonjour(
         &mut self,
         service_type: &BonjourServiceType,
