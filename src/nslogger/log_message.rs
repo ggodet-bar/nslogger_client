@@ -58,31 +58,39 @@ impl FromStr for Domain {
 #[allow(dead_code)]
 pub enum MessagePartKey {
     MessageType = 0,
-    TimestampS = 1, // "seconds" component of timestamp
-    TimestampMs = 2, /* milliseconds component of timestamp (optional, mutually exclusive with
-                     * TIMESTAMP_US) */
-    TimestampUs = 3, /* microseconds component of timestamp (optional, mutually exclusive with
-                      * TIMESTAMP_MS) */
+    /// "seconds" component of timestamp
+    TimestampS = 1,
+    /// Milliseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_US)
+    TimestampMs = 2,
+    /// Microseconds component of timestamp (optional, mutually exclusive with TIMESTAMP_MS)
+    TimestampUs = 3,
     ThreadId = 4,
     Tag = 5,
     Level = 6,
     Message = 7,
-    ImageWidth = 8, // messages containing an image should also contain a part with the image size
-    ImageHeight = 9, /* (this is mainly for the desktop viewer to compute the cell size without
-                     * having to immediately decode the image) */
-    MessageSeq = 10, /* the sequential number of this message which indicates the order in
-                      * which messages are generated */
-    FileName = 11,     // when logging, message can contain a file name
-    LineNumber = 12,   // as well as a line number
-    FunctionName = 13, // and a function or method name
-
-    // Client info
+    /// Messages containing an image should also provide the image size
+    ImageWidth = 8,
+    ImageHeight = 9,
+    /// Message sequence number.
+    MessageSeq = 10,
+    /*
+     * Optional source file data.
+     */
+    FileName = 11,
+    LineNumber = 12,
+    FunctionName = 13,
+    /*
+     * Client info.
+     */
     ClientName = 20,
-    ClientVersion = 21, // unreachable from Rust
+    /// (unreachable in Rust)
+    ClientVersion = 21,
     OsName = 22,
     OsVersion = 23,
-    ClientModel = 24, // Android-specific
-    UniqueId = 25,    // Android-specific
+    /// (Android-specific)
+    ClientModel = 24,
+    /// (Android-specific)
+    UniqueId = 25,
 
     UserDefined = 100,
 }
@@ -90,30 +98,39 @@ pub enum MessagePartKey {
 #[derive(Copy, Clone)]
 #[repr(u8)]
 pub(crate) enum MessagePartType {
-    String = 0, // Strings are stored as UTF-8 data
-    Binary = 1, // A block of binary data
+    /// UTF-8 string
+    String = 0,
+    Binary = 1,
     Int16 = 2,
     Int32 = 3,
     Int64 = 4,
-    Image = 5, // An image, stored in PNG format
+    /// PNG image
+    Image = 5,
 }
 
 #[derive(Copy, Clone)]
 #[repr(u32)]
 #[allow(dead_code)]
 pub(crate) enum LogMessageType {
-    Log = 0,    // A standard log message
-    BlockStart, // The start of a "block" (a group of log entries)
-    BlockEnd,   // The end of the last started "block"
-    ClientInfo, // Information about the client app
-    Disconnect, // Pseudo-message on the desktop side to identify client disconnects
-    Mark,       // Pseudo-message that defines a "mark" that users can place in the log flow
+    /// Standard log messagge
+    Log = 0,
+    /// Start of a block (i.e., a group) of log entries
+    BlockStart,
+    /// End of the block of entries
+    BlockEnd,
+    /// Client app info
+    ClientInfo,
+    /// Identifies a client disconnect
+    Disconnect,
+    /// Mark (i.e., a section marker) in the log sequence
+    Mark,
 }
 
 #[derive(Debug)]
 pub struct LogMessage {
     pub sequence_number: u32,
     pub data: Vec<u8>,
+    /// Number of parts contained in the log message
     part_count: u16,
 }
 

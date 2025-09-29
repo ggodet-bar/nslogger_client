@@ -111,10 +111,6 @@ impl LogWorker {
         if DEBUG_LOGGER {
             log::info!("logging thread starting up");
         }
-
-        // Since we don't have a straightforward way to block the loop (cf Android), we'll setup
-        // the connection before releasing the waiting thread(s).
-
         /*
          * Initial setup according to current parameters.
          */
@@ -227,8 +223,6 @@ impl LogWorker {
             if DEBUG_LOGGER {
                 log::info!("activating SSL connection");
             }
-
-            // FIXME Rework the whole connection sub-process.
             let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls()).unwrap();
 
             ssl_connector_builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
@@ -236,7 +230,6 @@ impl LogWorker {
                 .set_verify_callback(openssl::ssl::SslVerifyMode::NONE, |_, _| true);
 
             let connector = ssl_connector_builder.build();
-            // if let WriteStreamWrapper::Tcp(inner_stream) = self.write_stream.take().unwrap() {
             let stream = connector.connect("localhost", stream).unwrap();
             if DEBUG_LOGGER {
                 log::info!("opened SSL stream");
