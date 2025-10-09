@@ -144,14 +144,6 @@ impl Default for LogMessage {
 
 impl LogMessage {
     pub fn client_info() -> LogMessage {
-        let mut message = LogMessage::new(LogMessageType::ClientInfo);
-
-        if let Ok(os_type) = sys_info::os_type() {
-            message.add_string(MessagePartKey::OsName, &os_type);
-        };
-        if let Ok(os_release) = sys_info::os_release() {
-            message.add_string(MessagePartKey::OsVersion, &os_release);
-        }
         let process_name = env::current_exe()
             .ok()
             .as_ref()
@@ -159,28 +151,25 @@ impl LogMessage {
             .and_then(Path::file_name)
             .and_then(OsStr::to_str)
             .map(String::from);
-
-        if let Some(name) = process_name {
-            message.add_string(MessagePartKey::ClientName, &name);
-        }
-
-        message
+        LogMessage::new(LogMessageType::ClientInfo)
+            .with_string_opt(MessagePartKey::OsName, sys_info::os_type().ok())
+            .with_string_opt(MessagePartKey::OsVersion, sys_info::os_release().ok())
+            .with_string_opt(MessagePartKey::ClientName, process_name)
     }
 
     pub fn new(message_type: LogMessageType) -> LogMessage {
-        let mut new_message = LogMessage::default();
-        /*
-         * Reserve 6 bytes for the message header.
-         */
-        new_message.data.extend_from_slice(&[0_u8; 6]);
-        /*
-         * Message descriptor.
-         */
-        new_message.add_int32(MessagePartKey::MessageType, message_type as u32);
-        new_message.add_int32(MessagePartKey::MessageSeq, 0);
-        new_message.add_timestamp(None);
-        new_message.add_thread_id(thread::current());
-        new_message
+        LogMessage::default()
+            /*
+             * Reserve 6 bytes for the message header.
+             */
+            .with_reserved_bytes(6)
+            /*
+             * Message descriptor.
+             */
+            .with_int32(MessagePartKey::MessageType, message_type as u32)
+            .with_int32(MessagePartKey::MessageSeq, 0)
+            .with_timestamp(None)
+            .with_thread_id(thread::current())
     }
 
     pub fn with_header(
@@ -191,96 +180,107 @@ impl LogMessage {
         domain: Option<Domain>,
         level: log::Level,
     ) -> LogMessage {
-        let mut new_message = LogMessage::new(message_type);
-
-        new_message.add_int16(MessagePartKey::Level, level as u16);
-
-        if let Some(path) = filename {
-            new_message.add_string(
+        LogMessage::new(message_type)
+            .with_int16(MessagePartKey::Level, level as u16)
+            .with_string_opt(
                 MessagePartKey::FileName,
-                path.to_str().expect("Invalid path encoding"),
-            );
-
-            if let Some(nb) = line_number {
-                new_message.add_int32(MessagePartKey::LineNumber, nb);
-            }
-        }
-
-        if let Some(method_name) = method {
-            new_message.add_string(MessagePartKey::FunctionName, method_name);
-        }
-
-        if let Some(domain_tag) = domain {
-            let tag_string = domain_tag.to_string();
-            if !tag_string.is_empty() {
-                new_message.add_string(MessagePartKey::Tag, &tag_string);
-            }
-        };
-        new_message
+                filename.map(|p| p.to_string_lossy().into_owned()),
+            )
+            .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
+            .with_string_opt(MessagePartKey::FunctionName, method)
+            .with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
     }
 
-    pub fn add_int64(&mut self, key: MessagePartKey, value: u64) {
+    fn with_reserved_bytes(mut self, len: usize) -> Self {
+        self.data.extend_from_slice(&vec![0_u8; len]);
+        self
+    }
+
+    fn with_int64(mut self, key: MessagePartKey, value: u64) -> Self {
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int64 as u8).unwrap();
         self.data.write_u64::<BigEndian>(value).unwrap();
         self.part_count += 1;
+        self
     }
 
-    pub fn add_int32(&mut self, key: MessagePartKey, value: u32) {
+    fn with_int32(mut self, key: MessagePartKey, value: u32) -> Self {
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int32 as u8).unwrap();
         self.data.write_u32::<BigEndian>(value).unwrap();
         self.part_count += 1;
+        self
     }
 
-    pub fn add_int16(&mut self, key: MessagePartKey, value: u16) {
+    fn with_int32_opt(self, key: MessagePartKey, value: Option<u32>) -> Self {
+        let Some(value) = value else {
+            return self;
+        };
+        self.with_int32(key, value)
+    }
+
+    pub(crate) fn with_int16(mut self, key: MessagePartKey, value: u16) -> Self {
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(MessagePartType::Int16 as u8).unwrap();
         self.data.write_u16::<BigEndian>(value).unwrap();
         self.part_count += 1;
+        self
     }
 
-    pub fn add_binary_data(&mut self, key: MessagePartKey, bytes: &[u8]) {
-        self.add_bytes(key, MessagePartType::Binary, bytes);
-    }
-
-    pub fn add_image_data(&mut self, key: MessagePartKey, bytes: &[u8]) {
-        self.add_bytes(key, MessagePartType::Image, bytes);
-    }
-
-    fn add_bytes(&mut self, key: MessagePartKey, data_type: MessagePartType, bytes: &[u8]) {
+    fn with_bytes(mut self, key: MessagePartKey, data_type: MessagePartType, bytes: &[u8]) -> Self {
         let length = bytes.len();
         self.data.write_u8(key as u8).unwrap();
         self.data.write_u8(data_type as u8).unwrap();
         self.data.write_u32::<BigEndian>(length as u32).unwrap();
         self.data.extend_from_slice(bytes);
         self.part_count += 1;
+        self
     }
 
-    pub fn add_string(&mut self, key: MessagePartKey, string: &str) {
-        self.add_bytes(key, MessagePartType::String, string.as_bytes());
+    pub fn with_binary_data(self, key: MessagePartKey, bytes: &[u8]) -> Self {
+        self.with_bytes(key, MessagePartType::Binary, bytes)
     }
 
-    fn add_timestamp(&mut self, value: Option<u64>) {
+    pub fn with_image_data(self, key: MessagePartKey, bytes: &[u8]) -> Self {
+        self.with_bytes(key, MessagePartType::Image, bytes)
+    }
+
+    pub fn with_string<A: AsRef<str>>(self, key: MessagePartKey, stringlike: A) -> Self {
+        self.with_bytes(key, MessagePartType::String, stringlike.as_ref().as_bytes())
+    }
+
+    pub fn with_string_opt<A: AsRef<str>>(
+        self,
+        key: MessagePartKey,
+        stringlike: Option<A>,
+    ) -> Self {
+        let Some(string) = stringlike else {
+            return self;
+        };
+        self.with_string(key, string)
+    }
+
+    fn with_timestamp(self, value: Option<u64>) -> Self {
         let value = value.unwrap_or_else(|| {
             time::SystemTime::now()
                 .duration_since(time::UNIX_EPOCH)
                 .unwrap()
                 .as_millis() as u64
         });
-        self.add_int64(MessagePartKey::TimestampS, value / 1000);
-        self.add_int16(MessagePartKey::TimestampMs, (value % 1000) as u16);
+        self.with_int64(MessagePartKey::TimestampS, value / 1000)
+            .with_int16(MessagePartKey::TimestampMs, (value % 1000) as u16)
     }
 
-    fn add_thread_id(&mut self, thread: thread::Thread) {
-        self.add_string(MessagePartKey::ThreadId, &format!("{:?}", thread.id()));
+    fn with_thread_id(self, thread: thread::Thread) -> Self {
+        self.with_string(MessagePartKey::ThreadId, &format!("{:?}", thread.id()))
     }
 
-    pub fn freeze(&mut self) {
+    pub fn freeze(mut self) -> Self {
         let size = self.data.len() as u32 - 4;
         let data_slice = self.data.as_mut_slice();
         data_slice[..4].copy_from_slice(&size.to_be_bytes());
         data_slice[4..6].copy_from_slice(&self.part_count.to_be_bytes());
+        self
     }
 }
 
@@ -291,12 +291,11 @@ mod tests {
     #[test]
     fn smallest_message() {
         let id_string_len = format!("{:?}", std::thread::current().id()).len();
-        let mut msg = LogMessage::new(LogMessageType::Log);
+        let msg = LogMessage::new(LogMessageType::Log);
         assert_eq!(5, msg.part_count);
         assert_eq!(38 + id_string_len, msg.data.len());
         assert_eq!(&[0_u8; 6], &msg.data[..6]);
-        msg.freeze();
-        let bytes = msg.data;
+        let bytes = msg.freeze().data;
         assert_eq!(
             34 + id_string_len as u32,
             u32::from_be_bytes(bytes[0..4].try_into().unwrap())

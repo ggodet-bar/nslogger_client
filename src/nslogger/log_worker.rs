@@ -322,13 +322,13 @@ impl LogWorker {
             );
         }
 
-        while let Some((mut message, signal)) = self.log_messages.pop_front() {
+        while let Some((message, signal)) = self.log_messages.pop_front() {
             {
                 if DEBUG_LOGGER {
                     log::info!("processing message {}", &message.sequence_number);
                 }
 
-                message.freeze();
+                let message = message.freeze();
                 let length = message.data.len();
 
                 let tcp_stream = self.write_stream.as_mut().unwrap();

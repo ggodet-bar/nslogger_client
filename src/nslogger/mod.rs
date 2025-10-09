@@ -151,7 +151,7 @@ impl Logger {
         self.flush_messages = flush_each_message;
     }
 
-    fn inner_log(&self, log_message: LogMessage) {
+    fn log_and_flush(&self, log_message: LogMessage) {
         if DEBUG_LOGGER {
             log::info!("entering log");
         }
@@ -171,16 +171,16 @@ impl Logger {
         level: log::Level,
         message: &str,
     ) {
-        let mut log_message = LogMessage::with_header(
+        let log_message = LogMessage::with_header(
             LogMessageType::Log,
             filename,
             line_number,
             method,
             domain,
             level,
-        );
-        log_message.add_string(MessagePartKey::Message, message);
-        self.inner_log(log_message);
+        )
+        .with_string(MessagePartKey::Message, message);
+        self.log_and_flush(log_message);
     }
 
     pub fn logm(&self, domain: Option<Domain>, level: log::Level, message: &str) {
@@ -196,21 +196,14 @@ impl Logger {
     /// Marks are important points that you can jump to directly in the desktop viewer. Message is
     /// optional, if null or empty it will be replaced with the current date / time
     pub fn log_mark(&self, message: Option<&str>) {
-        let mut log_message = LogMessage::with_header(
-            LogMessageType::Mark,
-            None,
-            None,
-            None,
-            None,
-            log::Level::Error,
-        );
-
         let mark_message = message.map(|msg| msg.to_string()).unwrap_or_else(|| {
             let time_now = chrono::Utc::now();
             time_now.format("%b %-d, %-I:%M:%S").to_string()
         });
-        log_message.add_string(MessagePartKey::Message, &mark_message);
-        self.inner_log(log_message)
+        let log_message = LogMessage::new(LogMessageType::Mark)
+            .with_int16(MessagePartKey::Level, log::Level::Error as u16)
+            .with_string(MessagePartKey::Message, &mark_message);
+        self.log_and_flush(log_message)
     }
 
     pub fn log_data(
@@ -222,16 +215,16 @@ impl Logger {
         level: log::Level,
         data: &[u8],
     ) {
-        let mut log_message = LogMessage::with_header(
+        let log_message = LogMessage::with_header(
             LogMessageType::Log,
             filename,
             line_number,
             method,
             domain,
             level,
-        );
-        log_message.add_binary_data(MessagePartKey::Message, data);
-        self.inner_log(log_message)
+        )
+        .with_binary_data(MessagePartKey::Message, data);
+        self.log_and_flush(log_message)
     }
 
     pub fn log_image(
@@ -243,16 +236,16 @@ impl Logger {
         level: log::Level,
         data: &[u8],
     ) {
-        let mut log_message = LogMessage::with_header(
+        let log_message = LogMessage::with_header(
             LogMessageType::Log,
             filename,
             line_number,
             method,
             domain,
             level,
-        );
-        log_message.add_image_data(MessagePartKey::Message, data);
-        self.inner_log(log_message);
+        )
+        .with_image_data(MessagePartKey::Message, data);
+        self.log_and_flush(log_message);
     }
 
     fn start_logging_thread_if_needed(&self) {
