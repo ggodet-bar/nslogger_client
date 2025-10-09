@@ -273,11 +273,7 @@ impl LogMessage {
     }
 
     fn add_thread_id(&mut self, thread: thread::Thread) {
-        let thread_name = thread
-            .name()
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| format!("{:?}", thread.id()));
-        self.add_string(MessagePartKey::ThreadId, &thread_name);
+        self.add_string(MessagePartKey::ThreadId, &format!("{:?}", thread.id()));
     }
 
     pub fn freeze(&mut self) {
@@ -294,19 +290,19 @@ mod tests {
 
     #[test]
     fn smallest_message() {
-        let thread_name_len = std::thread::current().name().unwrap().len();
+        let id_string_len = format!("{:?}", std::thread::current().id()).len();
         let mut msg = LogMessage::new(LogMessageType::Log);
         assert_eq!(5, msg.part_count);
-        assert_eq!(38 + thread_name_len, msg.data.len());
+        assert_eq!(38 + id_string_len, msg.data.len());
         assert_eq!(&[0_u8; 6], &msg.data[..6]);
         msg.freeze();
         let bytes = msg.data;
         assert_eq!(
-            34 + thread_name_len as u32,
+            34 + id_string_len as u32,
             u32::from_be_bytes(bytes[0..4].try_into().unwrap())
         );
         assert_eq!(5, u16::from_be_bytes(bytes[4..6].try_into().unwrap()));
-        assert_eq!(38 + thread_name_len, bytes.len());
+        assert_eq!(38 + id_string_len, bytes.len());
     }
 
     #[test]
