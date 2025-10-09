@@ -9,6 +9,10 @@ name="nslogger"
 crate-type = ["lib"]
 path = "src/lib.rs"
 
+[features]
+# Enables testing the integration of the library with the desktop application.
+desktop-integration = []
+
 [dependencies]
 async-dnssd = "0.5"
 cfg-if = "1.0"

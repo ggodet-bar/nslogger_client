@@ -5,13 +5,18 @@ extern crate log;
 
 static START: Once = Once::new();
 
+fn initialize_logger() {
+    START.call_once(|| {
+        nslogger::init().unwrap();
+    });
+}
+
 /*
- * NOTE The following tests all rely on NSLogger to be running. As such, they ignored to
- * avoid issues in CI.
+ * NOTE The following tests all rely on NSLogger to be running.
  */
 
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "desktop-integration"), ignore)]
 fn logs_simple_messages() {
     initialize_logger();
 
@@ -22,7 +27,7 @@ fn logs_simple_messages() {
 }
 
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "desktop-integration"), ignore)]
 fn logs_messages_with_targets() {
     initialize_logger();
 
@@ -32,7 +37,7 @@ fn logs_messages_with_targets() {
 }
 
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "desktop-integration"), ignore)]
 fn logs_messages_starting_from_different_threads() {
     use std::{
         sync::{Arc, Barrier},
@@ -65,10 +70,4 @@ fn logs_messages_starting_from_different_threads() {
 
     let ten_millis = time::Duration::from_secs(2);
     thread::sleep(ten_millis);
-}
-
-fn initialize_logger() {
-    START.call_once(|| {
-        nslogger::init().unwrap();
-    });
 }
