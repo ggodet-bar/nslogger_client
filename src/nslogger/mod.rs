@@ -27,13 +27,13 @@ mod network_manager;
 mod reference_counted_runtime;
 
 #[cfg(test)]
-pub(crate) use self::log_message::{LogMessageType, MessagePartType, SEQUENCE_NB_OFFSET};
+pub(crate) use self::log_message::{LogMessageType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
     log_message::{LogMessage, MessagePartKey},
-    log_worker::{ConnectionMode, LogWorker, Message},
-    network_manager::BonjourServiceType,
+    log_worker::{LogWorker, Message},
     reference_counted_runtime::ReferenceCountedRuntime,
 };
+pub use self::{log_worker::ConnectionMode, network_manager::BonjourServiceType};
 pub use crate::nslogger::log_message::Domain;
 
 #[derive(Debug, Clone, Default)]

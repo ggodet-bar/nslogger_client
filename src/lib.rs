@@ -36,8 +36,7 @@ use std::{env, path::PathBuf, str::FromStr};
 
 mod nslogger;
 
-use nslogger::ConnectionMode;
-pub use nslogger::{Domain, Logger};
+pub use nslogger::{BonjourServiceType, ConnectionMode, Domain, Logger};
 
 /// Parses the environment variables to identify the max logging level, the type of connection to
 /// NSLogger (or the log file path), and whether the logger should wait for each message to be
