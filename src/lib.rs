@@ -10,11 +10,8 @@
 //!```rust
 //! use log::info;
 //!
-//! fn main() {
-//!  nslogger::init();
-//!
-//!  info!("this is an NSLogger message");
-//! }
+//! nslogger::init();
+//! info!("this is an NSLogger message");
 //! ```
 //!
 //!Using the `nslogger_client` API:
@@ -23,12 +20,10 @@
 //! use nslogger::{Logger, Domain};
 //! use log::Level;
 //!
-//! fn main() {
-//!  let log = Logger::new().expect("a logger instance");
-//!  log.logm(Some(Domain::App), Level::Info, "starting application");
-//!  log.log_mark(None); // will display a mark with no label in the NSLogger viewer
-//!  log.logm(Some(Domain::App), Level::Info, "leaving application");
-//! }
+//! let log = Logger::new().expect("a logger instance");
+//! log.logm(Some(Domain::App), Level::Info, "starting application");
+//! log.log_mark(None); // will display a mark with no label in the NSLogger viewer
+//! log.logm(Some(Domain::App), Level::Info, "leaving application");
 //! ```
 //!
 //!## NOT supported:

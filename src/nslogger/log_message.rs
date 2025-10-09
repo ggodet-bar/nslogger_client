@@ -1,8 +1,6 @@
 use std::{env, ffi::OsStr, fmt, path::Path, str::FromStr, thread, time};
 
 use byteorder::{BigEndian, WriteBytesExt};
-use log;
-use sys_info;
 
 pub const SEQUENCE_NB_OFFSET: usize = 14;
 

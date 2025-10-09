@@ -5,7 +5,6 @@ use std::{
 };
 
 use cfg_if::cfg_if;
-use chrono;
 use tokio::sync::mpsc;
 
 const DEBUG_LOGGER: bool = true & cfg!(test);
