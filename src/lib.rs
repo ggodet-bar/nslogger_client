@@ -95,8 +95,7 @@ mod tests {
 
     use super::*;
     use crate::nslogger::{
-        BonjourServiceType, ConnectionMode, Domain, LogMessageType, Logger, MessagePartKey,
-        MessagePartType, SEQUENCE_NB_OFFSET,
+        BonjourServiceType, ConnectionMode, Domain, LogMessageType, Logger, SEQUENCE_NB_OFFSET,
     };
 
     #[test]

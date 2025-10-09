@@ -1,4 +1,4 @@
-use std::{env, ffi::OsStr, fmt, path::Path, str::FromStr, thread, time};
+use std::{borrow::Cow, env, ffi::OsStr, fmt, path::Path, str::FromStr, thread, time};
 
 pub(crate) const SEQUENCE_NB_OFFSET: usize = 14;
 
@@ -152,7 +152,7 @@ impl LogMessage {
             .freeze()
     }
 
-    pub fn log() -> LogMessageBuilder {
+    pub fn log<'a>() -> LogMessageBuilder<'a> {
         LogMessageBuilder::new(LogMessageType::Log)
     }
 
@@ -166,34 +166,36 @@ impl LogMessage {
     }
 }
 
-enum MessageData {
+enum MessageData<'a> {
     Int64(u64),
     Int32(u32),
     Int16(u16),
-    // TODO Store a ref instead and use a lifecycle
-    Bytes(MessagePartType, Vec<u8>),
+    Bytes(MessagePartType, &'a [u8]),
+    String(Cow<'a, str>),
 }
 
-impl MessageData {
+impl<'a> MessageData<'a> {
     fn part_type(&self) -> MessagePartType {
         match self {
             Self::Int64(_) => MessagePartType::Int64,
             Self::Int32(_) => MessagePartType::Int32,
             Self::Int16(_) => MessagePartType::Int16,
+            Self::String(_) => MessagePartType::String,
             Self::Bytes(part_type, _) => *part_type,
         }
     }
 }
 
-struct MessagePart(MessagePartKey, MessageData);
+struct MessagePart<'a>(MessagePartKey, MessageData<'a>);
 
-impl MessagePart {
+impl<'a> MessagePart<'a> {
     /// Returns the size of the serialized part, in bytes.
     fn size(&self) -> usize {
         match self {
             Self(_, MessageData::Int64(_)) => 10,
             Self(_, MessageData::Int32(_)) => 6,
             Self(_, MessageData::Int16(_)) => 4,
+            Self(_, MessageData::String(string)) => 6 + string.len(),
             Self(_, MessageData::Bytes(_, bytes)) => 6 + bytes.len(),
         }
     }
@@ -205,6 +207,10 @@ impl MessagePart {
             MessageData::Int64(v) => buf[2..10].copy_from_slice(&v.to_be_bytes()),
             MessageData::Int32(v) => buf[2..6].copy_from_slice(&v.to_be_bytes()),
             MessageData::Int16(v) => buf[2..4].copy_from_slice(&v.to_be_bytes()),
+            MessageData::String(string) => {
+                buf[2..6].copy_from_slice(&(string.len() as u32).to_be_bytes());
+                buf[6..(6 + string.len())].copy_from_slice(string.as_bytes());
+            }
             MessageData::Bytes(_, bytes) => {
                 buf[2..6].copy_from_slice(&(bytes.len() as u32).to_be_bytes());
                 buf[6..(6 + bytes.len())].copy_from_slice(bytes);
@@ -213,10 +219,10 @@ impl MessagePart {
     }
 }
 
-pub struct LogMessageBuilder(Vec<MessagePart>);
+pub struct LogMessageBuilder<'a>(Vec<MessagePart<'a>>);
 
-impl LogMessageBuilder {
-    pub fn new(message_type: LogMessageType) -> LogMessageBuilder {
+impl<'a> LogMessageBuilder<'a> {
+    pub fn new(message_type: LogMessageType) -> LogMessageBuilder<'a> {
         LogMessageBuilder(Vec::with_capacity(8))
             /*
              * Message descriptor.
@@ -252,12 +258,32 @@ impl LogMessageBuilder {
         self
     }
 
-    fn with_bytes(mut self, key: MessagePartKey, data_type: MessagePartType, bytes: &[u8]) -> Self {
-        self.0.push(MessagePart(
-            key,
-            MessageData::Bytes(data_type, bytes.to_vec()),
-        ));
+    fn with_bytes(
+        mut self,
+        key: MessagePartKey,
+        data_type: MessagePartType,
+        bytes: &'a [u8],
+    ) -> Self {
+        self.0
+            .push(MessagePart(key, MessageData::Bytes(data_type, bytes)));
         self
+    }
+
+    pub fn with_string(mut self, key: MessagePartKey, stringlike: impl Into<Cow<'a, str>>) -> Self {
+        self.0
+            .push(MessagePart(key, MessageData::String(stringlike.into())));
+        self
+    }
+
+    pub fn with_string_opt(
+        self,
+        key: MessagePartKey,
+        stringlike: Option<impl Into<Cow<'a, str>>>,
+    ) -> Self {
+        let Some(string) = stringlike else {
+            return self;
+        };
+        self.with_string(key, string)
     }
 
     /// Current size of the serialized message, in bytes.
@@ -269,7 +295,7 @@ impl LogMessageBuilder {
         self,
         filename: Option<&Path>,
         line_number: Option<u32>,
-        method: Option<&str>,
+        method: Option<&'a str>,
         domain: Option<Domain>,
         level: log::Level,
     ) -> Self {
@@ -283,27 +309,12 @@ impl LogMessageBuilder {
             .with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
     }
 
-    pub fn with_binary_data(self, key: MessagePartKey, bytes: &[u8]) -> Self {
+    pub fn with_binary_data(self, key: MessagePartKey, bytes: &'a [u8]) -> Self {
         self.with_bytes(key, MessagePartType::Binary, bytes)
     }
 
-    pub fn with_image_data(self, key: MessagePartKey, bytes: &[u8]) -> Self {
+    pub fn with_image_data(self, key: MessagePartKey, bytes: &'a [u8]) -> Self {
         self.with_bytes(key, MessagePartType::Image, bytes)
-    }
-
-    pub fn with_string<A: AsRef<str>>(self, key: MessagePartKey, stringlike: A) -> Self {
-        self.with_bytes(key, MessagePartType::String, stringlike.as_ref().as_bytes())
-    }
-
-    pub fn with_string_opt<A: AsRef<str>>(
-        self,
-        key: MessagePartKey,
-        stringlike: Option<A>,
-    ) -> Self {
-        let Some(string) = stringlike else {
-            return self;
-        };
-        self.with_string(key, string)
     }
 
     /// Logs the passed `ts`, otherwise logs the 'now' timestamp.
@@ -319,7 +330,10 @@ impl LogMessageBuilder {
     }
 
     fn with_thread_id(self, thread: thread::Thread) -> Self {
-        self.with_string(MessagePartKey::ThreadId, &format!("{:?}", thread.id()))
+        self.with_string(
+            MessagePartKey::ThreadId,
+            Cow::Owned(format!("{:?}", thread.id())),
+        )
     }
 
     pub fn freeze(mut self) -> LogMessage {
@@ -351,7 +365,7 @@ impl LogMessageBuilder {
 mod tests {
     use super::*;
 
-    impl MessageData {
+    impl<'a> MessageData<'a> {
         fn as_int64(&self) -> Option<u64> {
             let Self::Int64(v) = self else {
                 return None;

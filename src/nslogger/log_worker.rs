@@ -346,7 +346,7 @@ impl LogWorker {
                     message.bytes().len()
                 );
             }
-            if let Err(err) = tcp_stream.write_all(&message.bytes()) {
+            if let Err(err) = tcp_stream.write_all(message.bytes()) {
                 self.log_messages.push_front((message, signal));
                 if DEBUG_LOGGER {
                     log::warn!("write to stream failed: {err:?}");
