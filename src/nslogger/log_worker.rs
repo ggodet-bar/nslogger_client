@@ -127,6 +127,12 @@ impl LogWorker {
         Ok(())
     }
 
+    fn generate_sequence_nb(&mut self) -> u32 {
+        let nb = self.sequence_generator;
+        self.sequence_generator += 1;
+        nb
+    }
+
     fn handle_message(&mut self, message: Message) -> Result<(), Error> {
         if DEBUG_LOGGER {
             log::info!("received message");
@@ -138,12 +144,11 @@ impl LogWorker {
                  * Sequence number is set on receiving the message in the handler to
                  * guarantee a strictly monotonic sequence.
                  */
-                message.sequence_number = self.sequence_generator;
+                let sequence_number = self.generate_sequence_nb();
                 message.data[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
-                    .copy_from_slice(&self.sequence_generator.to_be_bytes());
-                self.sequence_generator += 1;
+                    .copy_from_slice(&sequence_number.to_be_bytes());
                 if DEBUG_LOGGER {
-                    log::info!("adding log {} to the queue", message.sequence_number);
+                    log::info!("adding log {} to the queue", sequence_number);
                 }
 
                 self.log_messages.push_back((message, signal));
@@ -325,7 +330,14 @@ impl LogWorker {
         while let Some((message, signal)) = self.log_messages.pop_front() {
             {
                 if DEBUG_LOGGER {
-                    log::info!("processing message {}", &message.sequence_number);
+                    log::info!(
+                        "processing message {}",
+                        &u32::from_be_bytes(
+                            message.data[SEQUENCE_NB_OFFSET..SEQUENCE_NB_OFFSET + 4]
+                                .try_into()
+                                .unwrap()
+                        )
+                    );
                 }
 
                 let message = message.freeze();

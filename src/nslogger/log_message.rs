@@ -126,7 +126,6 @@ pub(crate) enum LogMessageType {
 
 #[derive(Debug)]
 pub struct LogMessage {
-    pub sequence_number: u32,
     pub data: Vec<u8>,
     /// Number of parts contained in the log message
     part_count: u16,
@@ -135,7 +134,6 @@ pub struct LogMessage {
 impl Default for LogMessage {
     fn default() -> Self {
         Self {
-            sequence_number: 0,
             part_count: 0,
             data: Vec::with_capacity(512),
         }
