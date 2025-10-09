@@ -1,8 +1,6 @@
 use std::{env, ffi::OsStr, fmt, path::Path, str::FromStr, thread, time};
 
-use byteorder::{BigEndian, WriteBytesExt};
-
-pub const SEQUENCE_NB_OFFSET: usize = 14;
+pub(crate) const SEQUENCE_NB_OFFSET: usize = 14;
 
 #[derive(Debug, PartialEq)]
 pub enum Domain {
@@ -125,20 +123,7 @@ pub(crate) enum LogMessageType {
 }
 
 #[derive(Debug)]
-pub struct LogMessage {
-    pub data: Vec<u8>,
-    /// Number of parts contained in the log message
-    part_count: u16,
-}
-
-impl Default for LogMessage {
-    fn default() -> Self {
-        Self {
-            part_count: 0,
-            data: Vec::with_capacity(512),
-        }
-    }
-}
+pub struct LogMessage(Vec<u8>);
 
 impl LogMessage {
     pub fn client_info() -> LogMessage {
@@ -149,64 +134,109 @@ impl LogMessage {
             .and_then(Path::file_name)
             .and_then(OsStr::to_str)
             .map(String::from);
-        LogMessage::new(LogMessageType::ClientInfo)
+        LogMessageBuilder::new(LogMessageType::ClientInfo)
             .with_string_opt(MessagePartKey::OsName, sys_info::os_type().ok())
             .with_string_opt(MessagePartKey::OsVersion, sys_info::os_release().ok())
             .with_string_opt(MessagePartKey::ClientName, process_name)
+            .freeze()
     }
 
-    pub fn new(message_type: LogMessageType) -> LogMessage {
-        LogMessage::default()
-            /*
-             * Reserve 6 bytes for the message header.
-             */
-            .with_reserved_bytes(6)
+    pub fn mark(message: Option<&str>) -> LogMessage {
+        let mark_message = message.map(|msg| msg.to_string()).unwrap_or_else(|| {
+            let time_now = chrono::Utc::now();
+            time_now.format("%b %-d, %-I:%M:%S").to_string()
+        });
+        LogMessageBuilder::new(LogMessageType::Mark)
+            .with_int16(MessagePartKey::Level, log::Level::Error as u16)
+            .with_string(MessagePartKey::Message, &mark_message)
+            .freeze()
+    }
+
+    pub fn log() -> LogMessageBuilder {
+        LogMessageBuilder::new(LogMessageType::Log)
+    }
+
+    pub fn set_sequence_number(&mut self, sequence_number: u32) {
+        self.0[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
+            .copy_from_slice(&sequence_number.to_be_bytes());
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+enum MessageData {
+    Int64(u64),
+    Int32(u32),
+    Int16(u16),
+    // TODO Store a ref instead and use a lifecycle
+    Bytes(MessagePartType, Vec<u8>),
+}
+
+impl MessageData {
+    fn part_type(&self) -> MessagePartType {
+        match self {
+            Self::Int64(_) => MessagePartType::Int64,
+            Self::Int32(_) => MessagePartType::Int32,
+            Self::Int16(_) => MessagePartType::Int16,
+            Self::Bytes(part_type, _) => *part_type,
+        }
+    }
+}
+
+struct MessagePart(MessagePartKey, MessageData);
+
+impl MessagePart {
+    /// Returns the size of the serialized part, in bytes.
+    fn size(&self) -> usize {
+        match self {
+            Self(_, MessageData::Int64(_)) => 10,
+            Self(_, MessageData::Int32(_)) => 6,
+            Self(_, MessageData::Int16(_)) => 4,
+            Self(_, MessageData::Bytes(_, bytes)) => 6 + bytes.len(),
+        }
+    }
+
+    fn write(&mut self, buf: &mut [u8]) {
+        buf[0] = self.0 as u8;
+        buf[1] = self.1.part_type() as u8;
+        match &self.1 {
+            MessageData::Int64(v) => buf[2..10].copy_from_slice(&v.to_be_bytes()),
+            MessageData::Int32(v) => buf[2..6].copy_from_slice(&v.to_be_bytes()),
+            MessageData::Int16(v) => buf[2..4].copy_from_slice(&v.to_be_bytes()),
+            MessageData::Bytes(_, bytes) => {
+                buf[2..6].copy_from_slice(&(bytes.len() as u32).to_be_bytes());
+                buf[6..(6 + bytes.len())].copy_from_slice(bytes);
+            }
+        }
+    }
+}
+
+pub struct LogMessageBuilder(Vec<MessagePart>);
+
+impl LogMessageBuilder {
+    pub fn new(message_type: LogMessageType) -> LogMessageBuilder {
+        LogMessageBuilder(Vec::with_capacity(8))
             /*
              * Message descriptor.
              */
             .with_int32(MessagePartKey::MessageType, message_type as u32)
+            /*
+             * Sequence number defaults to 0, as it will be set by the centralized worker.
+             */
             .with_int32(MessagePartKey::MessageSeq, 0)
             .with_timestamp(None)
             .with_thread_id(thread::current())
     }
 
-    pub fn with_header(
-        message_type: LogMessageType,
-        filename: Option<&Path>,
-        line_number: Option<u32>,
-        method: Option<&str>,
-        domain: Option<Domain>,
-        level: log::Level,
-    ) -> LogMessage {
-        LogMessage::new(message_type)
-            .with_int16(MessagePartKey::Level, level as u16)
-            .with_string_opt(
-                MessagePartKey::FileName,
-                filename.map(|p| p.to_string_lossy().into_owned()),
-            )
-            .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
-            .with_string_opt(MessagePartKey::FunctionName, method)
-            .with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
-    }
-
-    fn with_reserved_bytes(mut self, len: usize) -> Self {
-        self.data.extend_from_slice(&vec![0_u8; len]);
-        self
-    }
-
     fn with_int64(mut self, key: MessagePartKey, value: u64) -> Self {
-        self.data.write_u8(key as u8).unwrap();
-        self.data.write_u8(MessagePartType::Int64 as u8).unwrap();
-        self.data.write_u64::<BigEndian>(value).unwrap();
-        self.part_count += 1;
+        self.0.push(MessagePart(key, MessageData::Int64(value)));
         self
     }
 
     fn with_int32(mut self, key: MessagePartKey, value: u32) -> Self {
-        self.data.write_u8(key as u8).unwrap();
-        self.data.write_u8(MessagePartType::Int32 as u8).unwrap();
-        self.data.write_u32::<BigEndian>(value).unwrap();
-        self.part_count += 1;
+        self.0.push(MessagePart(key, MessageData::Int32(value)));
         self
     }
 
@@ -218,21 +248,39 @@ impl LogMessage {
     }
 
     pub(crate) fn with_int16(mut self, key: MessagePartKey, value: u16) -> Self {
-        self.data.write_u8(key as u8).unwrap();
-        self.data.write_u8(MessagePartType::Int16 as u8).unwrap();
-        self.data.write_u16::<BigEndian>(value).unwrap();
-        self.part_count += 1;
+        self.0.push(MessagePart(key, MessageData::Int16(value)));
         self
     }
 
     fn with_bytes(mut self, key: MessagePartKey, data_type: MessagePartType, bytes: &[u8]) -> Self {
-        let length = bytes.len();
-        self.data.write_u8(key as u8).unwrap();
-        self.data.write_u8(data_type as u8).unwrap();
-        self.data.write_u32::<BigEndian>(length as u32).unwrap();
-        self.data.extend_from_slice(bytes);
-        self.part_count += 1;
+        self.0.push(MessagePart(
+            key,
+            MessageData::Bytes(data_type, bytes.to_vec()),
+        ));
         self
+    }
+
+    /// Current size of the serialized message, in bytes.
+    fn size(&self) -> usize {
+        self.0.iter().map(MessagePart::size).sum::<usize>() + 6
+    }
+
+    pub fn with_header(
+        self,
+        filename: Option<&Path>,
+        line_number: Option<u32>,
+        method: Option<&str>,
+        domain: Option<Domain>,
+        level: log::Level,
+    ) -> Self {
+        self.with_int16(MessagePartKey::Level, level as u16)
+            .with_string_opt(
+                MessagePartKey::FileName,
+                filename.map(|p| p.to_string_lossy().into_owned()),
+            )
+            .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
+            .with_string_opt(MessagePartKey::FunctionName, method)
+            .with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
     }
 
     pub fn with_binary_data(self, key: MessagePartKey, bytes: &[u8]) -> Self {
@@ -258,8 +306,9 @@ impl LogMessage {
         self.with_string(key, string)
     }
 
-    fn with_timestamp(self, value: Option<u64>) -> Self {
-        let value = value.unwrap_or_else(|| {
+    /// Logs the passed `ts`, otherwise logs the 'now' timestamp.
+    fn with_timestamp(self, ts: Option<u64>) -> Self {
+        let value = ts.unwrap_or_else(|| {
             time::SystemTime::now()
                 .duration_since(time::UNIX_EPOCH)
                 .unwrap()
@@ -273,12 +322,28 @@ impl LogMessage {
         self.with_string(MessagePartKey::ThreadId, &format!("{:?}", thread.id()))
     }
 
-    pub fn freeze(mut self) -> Self {
-        let size = self.data.len() as u32 - 4;
-        let data_slice = self.data.as_mut_slice();
-        data_slice[..4].copy_from_slice(&size.to_be_bytes());
-        data_slice[4..6].copy_from_slice(&self.part_count.to_be_bytes());
-        self
+    pub fn freeze(mut self) -> LogMessage {
+        let mut buffer = vec![0_u8; self.size()];
+        /*
+         * NOTE It is a protocol requirement that the size value be decremented by 4.
+         */
+        buffer[..4].copy_from_slice(&((self.size() - 4) as u32).to_be_bytes());
+        /*
+         * Copy the part count into the buffer.
+         */
+        buffer[4..6].copy_from_slice(&(self.0.len() as u16).to_be_bytes());
+        /*
+         * Serialize each part into the buffer.
+         */
+        let mut idx = 6;
+        for part in &mut self.0 {
+            part.write(&mut buffer[idx..(idx + part.size())]);
+            idx += part.size();
+        }
+        /*
+         * Wrap and return as a log message.
+         */
+        LogMessage(buffer)
     }
 }
 
@@ -286,20 +351,74 @@ impl LogMessage {
 mod tests {
     use super::*;
 
+    impl MessageData {
+        fn as_int64(&self) -> Option<u64> {
+            let Self::Int64(v) = self else {
+                return None;
+            };
+            return Some(*v);
+        }
+
+        fn as_int16(&self) -> Option<u16> {
+            let Self::Int16(v) = self else {
+                return None;
+            };
+            return Some(*v);
+        }
+    }
+
     #[test]
-    fn smallest_message() {
-        let id_string_len = format!("{:?}", std::thread::current().id()).len();
-        let msg = LogMessage::new(LogMessageType::Log);
-        assert_eq!(5, msg.part_count);
-        assert_eq!(38 + id_string_len, msg.data.len());
-        assert_eq!(&[0_u8; 6], &msg.data[..6]);
-        let bytes = msg.freeze().data;
-        assert_eq!(
-            34 + id_string_len as u32,
-            u32::from_be_bytes(bytes[0..4].try_into().unwrap())
-        );
-        assert_eq!(5, u16::from_be_bytes(bytes[4..6].try_into().unwrap()));
-        assert_eq!(38 + id_string_len, bytes.len());
+    fn builds_smallest_message() {
+        let thread_id_str = format!("{:?}", std::thread::current().id());
+        let id_string_len = thread_id_str.len();
+        let builder = LogMessageBuilder::new(LogMessageType::Log);
+        assert_eq!(5, builder.0.len());
+        assert_eq!(38 + id_string_len, builder.size());
+        let ts_s = builder.0[2].1.as_int64().unwrap();
+        let ts_ms = builder.0[3].1.as_int16().unwrap();
+        let msg = builder.freeze();
+
+        let mut expected = Vec::with_capacity(38 + id_string_len);
+        /*
+         * Push the msg header (6B | 0B..6B).
+         */
+        expected.extend_from_slice(&(34 + id_string_len as u32).to_be_bytes());
+        expected.extend_from_slice(&5_u16.to_be_bytes());
+        /*
+         * Push the message type (6B | 6B..12B).
+         */
+        expected.push(MessagePartKey::MessageType as u8);
+        expected.push(MessagePartType::Int32 as u8);
+        expected.extend(&(LogMessageType::Log as u32).to_be_bytes());
+        /*
+         * Push a null sequence number (6B | 12B..18B).
+         */
+        expected.push(MessagePartKey::MessageSeq as u8);
+        expected.push(MessagePartType::Int32 as u8);
+        expected.extend(&[0_u8; 4]);
+        /*
+         * Push the timestamp seconds (10B | 18B..28B).
+         */
+        expected.push(MessagePartKey::TimestampS as u8);
+        expected.push(MessagePartType::Int64 as u8);
+        expected.extend(&ts_s.to_be_bytes());
+        /*
+         * Push the timestamp milliseconds (4B | 28B..32B).
+         */
+        expected.push(MessagePartKey::TimestampMs as u8);
+        expected.push(MessagePartType::Int16 as u8);
+        expected.extend(&ts_ms.to_be_bytes());
+        /*
+         * Push the thread id. (6B + len(str) | 32B..(38 + len(str)B))
+         */
+        expected.push(MessagePartKey::ThreadId as u8);
+        expected.push(MessagePartType::String as u8);
+        expected.extend(&(id_string_len as u32).to_be_bytes());
+        expected.extend(thread_id_str.as_bytes());
+        /*
+         * Compare.
+         */
+        assert_eq!(msg.bytes(), &expected);
     }
 
     #[test]

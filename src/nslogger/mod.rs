@@ -27,9 +27,9 @@ mod network_manager;
 mod reference_counted_runtime;
 
 #[cfg(test)]
-pub(crate) use self::log_message::{MessagePartType, SEQUENCE_NB_OFFSET};
+pub(crate) use self::log_message::{LogMessageType, MessagePartType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
-    log_message::{LogMessage, LogMessageType, MessagePartKey},
+    log_message::{LogMessage, MessagePartKey},
     log_worker::{ConnectionMode, LogWorker, Message},
     network_manager::BonjourServiceType,
     reference_counted_runtime::ReferenceCountedRuntime,
@@ -171,15 +171,10 @@ impl Logger {
         level: log::Level,
         message: &str,
     ) {
-        let log_message = LogMessage::with_header(
-            LogMessageType::Log,
-            filename,
-            line_number,
-            method,
-            domain,
-            level,
-        )
-        .with_string(MessagePartKey::Message, message);
+        let log_message = LogMessage::log()
+            .with_header(filename, line_number, method, domain, level)
+            .with_string(MessagePartKey::Message, message)
+            .freeze();
         self.log_and_flush(log_message);
     }
 
@@ -196,13 +191,7 @@ impl Logger {
     /// Marks are important points that you can jump to directly in the desktop viewer. Message is
     /// optional, if null or empty it will be replaced with the current date / time
     pub fn log_mark(&self, message: Option<&str>) {
-        let mark_message = message.map(|msg| msg.to_string()).unwrap_or_else(|| {
-            let time_now = chrono::Utc::now();
-            time_now.format("%b %-d, %-I:%M:%S").to_string()
-        });
-        let log_message = LogMessage::new(LogMessageType::Mark)
-            .with_int16(MessagePartKey::Level, log::Level::Error as u16)
-            .with_string(MessagePartKey::Message, &mark_message);
+        let log_message = LogMessage::mark(message);
         self.log_and_flush(log_message)
     }
 
@@ -215,15 +204,10 @@ impl Logger {
         level: log::Level,
         data: &[u8],
     ) {
-        let log_message = LogMessage::with_header(
-            LogMessageType::Log,
-            filename,
-            line_number,
-            method,
-            domain,
-            level,
-        )
-        .with_binary_data(MessagePartKey::Message, data);
+        let log_message = LogMessage::log()
+            .with_header(filename, line_number, method, domain, level)
+            .with_binary_data(MessagePartKey::Message, data)
+            .freeze();
         self.log_and_flush(log_message)
     }
 
@@ -236,15 +220,10 @@ impl Logger {
         level: log::Level,
         data: &[u8],
     ) {
-        let log_message = LogMessage::with_header(
-            LogMessageType::Log,
-            filename,
-            line_number,
-            method,
-            domain,
-            level,
-        )
-        .with_image_data(MessagePartKey::Message, data);
+        let log_message = LogMessage::log()
+            .with_header(filename, line_number, method, domain, level)
+            .with_image_data(MessagePartKey::Message, data)
+            .freeze();
         self.log_and_flush(log_message);
     }
 

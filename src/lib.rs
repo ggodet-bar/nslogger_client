@@ -218,11 +218,8 @@ mod tests {
         /*
          * First message should be a client info.
          */
-        assert!(buf.len() > 14);
+        assert!(buf.len() > SEQUENCE_NB_OFFSET + 4);
         let msg_size = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
-        assert!(buf.len() > msg_size + 4);
-        assert_eq!(MessagePartKey::MessageType as u8, buf[6]);
-        assert_eq!(MessagePartType::Int32 as u8, buf[7]);
         let msg_type = u32::from_be_bytes(buf[8..12].try_into().unwrap());
         assert_eq!(LogMessageType::ClientInfo as u32, msg_type);
         assert_eq!(
@@ -236,11 +233,20 @@ mod tests {
         /*
          * Second message should be a plain log message.
          */
-        let next_msg_idx = msg_size + 4;
-        let next_msg_size =
-            u32::from_be_bytes(buf[next_msg_idx..(next_msg_idx + 4)].try_into().unwrap()) as usize;
+        let next_msg_offset = msg_size + 4;
+        let next_msg_size = u32::from_be_bytes(
+            buf[next_msg_offset..(next_msg_offset + 4)]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let next_msg_part_count = u16::from_be_bytes(
+            buf[(next_msg_offset + 4)..(next_msg_offset + 6)]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(8, next_msg_part_count);
         let msg_type = u32::from_be_bytes(
-            buf[(next_msg_idx + 8)..(next_msg_idx + 12)]
+            buf[(next_msg_offset + 8)..(next_msg_offset + 12)]
                 .try_into()
                 .unwrap(),
         );
@@ -248,24 +254,29 @@ mod tests {
         assert_eq!(
             1,
             u32::from_be_bytes(
-                buf[(next_msg_idx + SEQUENCE_NB_OFFSET)..(next_msg_idx + SEQUENCE_NB_OFFSET + 4)]
+                buf[(next_msg_offset + SEQUENCE_NB_OFFSET)
+                    ..(next_msg_offset + SEQUENCE_NB_OFFSET + 4)]
                     .try_into()
                     .unwrap()
             )
         );
-        let msg_string_idx = next_msg_idx + next_msg_size + 4 - first_msg.len();
-        let msg =
-            String::from_utf8(buf[msg_string_idx..(msg_string_idx + first_msg.len())].to_vec())
-                .expect("a valid string");
+        let msg_string_offset = next_msg_offset + next_msg_size + 4 - first_msg.len();
+        let msg = String::from_utf8(
+            buf[msg_string_offset..(msg_string_offset + first_msg.len())].to_vec(),
+        )
+        .expect("a valid string");
         assert_eq!(first_msg, msg);
         /*
          * Last log message should be yet another plain log message.
          */
-        let last_msg_idx = next_msg_idx + next_msg_size + 4;
-        let last_msg_size =
-            u32::from_be_bytes(buf[last_msg_idx..(last_msg_idx + 4)].try_into().unwrap()) as usize;
+        let last_msg_offset = next_msg_offset + next_msg_size + 4;
+        let last_msg_size = u32::from_be_bytes(
+            buf[last_msg_offset..(last_msg_offset + 4)]
+                .try_into()
+                .unwrap(),
+        ) as usize;
         let msg_type = u32::from_be_bytes(
-            buf[(last_msg_idx + 8)..(last_msg_idx + 12)]
+            buf[(last_msg_offset + 8)..(last_msg_offset + 12)]
                 .try_into()
                 .unwrap(),
         );
@@ -273,12 +284,13 @@ mod tests {
         assert_eq!(
             2,
             u32::from_be_bytes(
-                buf[(last_msg_idx + SEQUENCE_NB_OFFSET)..(last_msg_idx + SEQUENCE_NB_OFFSET + 4)]
+                buf[(last_msg_offset + SEQUENCE_NB_OFFSET)
+                    ..(last_msg_offset + SEQUENCE_NB_OFFSET + 4)]
                     .try_into()
                     .unwrap()
             )
         );
-        assert_eq!(last_msg_idx + last_msg_size + 4, buf.len());
+        assert_eq!(last_msg_offset + last_msg_size + 4, buf.len());
     }
 
     /*

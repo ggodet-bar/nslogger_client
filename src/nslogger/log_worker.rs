@@ -145,8 +145,7 @@ impl LogWorker {
                  * guarantee a strictly monotonic sequence.
                  */
                 let sequence_number = self.generate_sequence_nb();
-                message.data[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
-                    .copy_from_slice(&sequence_number.to_be_bytes());
+                message.set_sequence_number(sequence_number);
                 if DEBUG_LOGGER {
                     log::info!("adding log {} to the queue", sequence_number);
                 }
@@ -328,39 +327,38 @@ impl LogWorker {
         }
 
         while let Some((message, signal)) = self.log_messages.pop_front() {
-            {
+            if DEBUG_LOGGER {
+                log::info!(
+                    "processing message {}",
+                    &u32::from_be_bytes(
+                        message.bytes()[SEQUENCE_NB_OFFSET..SEQUENCE_NB_OFFSET + 4]
+                            .try_into()
+                            .unwrap()
+                    )
+                );
+            }
+
+            let tcp_stream = self.write_stream.as_mut().unwrap();
+            if DEBUG_LOGGER {
+                log::info!(
+                    "writing to {:?} (len: {})",
+                    tcp_stream,
+                    message.bytes().len()
+                );
+            }
+            if let Err(err) = tcp_stream.write_all(&message.bytes()) {
+                self.log_messages.push_front((message, signal));
                 if DEBUG_LOGGER {
-                    log::info!(
-                        "processing message {}",
-                        &u32::from_be_bytes(
-                            message.data[SEQUENCE_NB_OFFSET..SEQUENCE_NB_OFFSET + 4]
-                                .try_into()
-                                .unwrap()
-                        )
-                    );
+                    log::warn!("write to stream failed: {err:?}");
                 }
 
-                let message = message.freeze();
-                let length = message.data.len();
-
-                let tcp_stream = self.write_stream.as_mut().unwrap();
-                if DEBUG_LOGGER {
-                    log::info!("writing to {:?} (len: {length})", tcp_stream);
-                }
-                if let Err(err) = tcp_stream.write_all(&message.data) {
-                    self.log_messages.push_front((message, signal));
-                    if DEBUG_LOGGER {
-                        log::warn!("write to stream failed: {err:?}");
-                    }
-
-                    self.disconnect();
-                    self.try_reconnecting()?;
-                    return Ok(());
-                }
-                if let Some(signal) = signal {
-                    tcp_stream.flush()?;
-                    signal.signal();
-                }
+                self.disconnect();
+                self.try_reconnecting()?;
+                return Ok(());
+            }
+            if let Some(signal) = signal {
+                tcp_stream.flush()?;
+                signal.signal();
             }
         }
 
