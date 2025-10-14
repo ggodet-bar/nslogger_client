@@ -3,10 +3,10 @@
 
 //! A client for the MacOS [NSLogger](https://github.com/fpillet/NSLogger) log viewer.
 //!
-//!## Logger configuration
+//! ## Logger configuration
 //!
 //! By default, `nslogger_client` connects to the default application using the default Bonjour
-//! service handles (`_nslogger._tcp.` and `_nslogger-ssl._tc.`) with no message flushing.
+//! service handle with SSL (`_nslogger-ssl._tcp.`) with no message flushing.
 //!
 //! `nslogger_client` may be configured via the following environment variables:
 //!
@@ -24,7 +24,7 @@
 //! - `NSLOG_HOST` - switches the logger to connect to the desktop application via TCP using the
 //!   `<address>:<port>` format. Domain name resolution is supported;
 //!
-//!## Examples
+//! ## Examples
 //!
 //! Using the `log` crate facade
 //!
@@ -35,28 +35,28 @@
 //! info!("this is an NSLogger message");
 //! ```
 //!
-//!Using the `nslogger_client` API:
+//! Using the `nslogger_client` API:
 //!
 //!```rust
 //! use nslogger::{Logger, Domain};
 //! use log::Level;
 //!
-//! let log = Logger::default();
-//! log.logm(Some(Domain::App), Level::Info, "starting application");
-//! log.log_mark(None); // will display a mark with no label in the NSLogger viewer
-//! log.logm(Some(Domain::App), Level::Info, "leaving application");
+//! let logger = Logger::default();
+//! logger.log(Level::Info).with_domain(Domain::App).message("starting application");
+//! logger.log_mark(None); // will display a mark with no label in the NSLogger viewer
+//! logger.log(Level::Info).with_domain(Domain::App).message("leaving application");
 //! ```
 //!
-//!## NOT supported:
+//! ## NOT supported:
 //!
-//!At the moment there are no plans to add support for the following NSLogger features:
+//! At the moment there are no plans to add support for the following NSLogger features:
 //!
-//! - message blocks
-//! - client disconnects
+//!  - message blocks
+//!  - client disconnects
 
 mod nslogger;
 
-pub use nslogger::{BonjourServiceType, Config, ConnectionMode, Domain, Logger};
+pub use nslogger::{BonjourServiceType, Config, ConnectionMode, Domain, Logger, MessageBuilder};
 
 /// Initializes the global logger with a Logger instance.
 ///
@@ -104,13 +104,12 @@ mod tests {
         .try_into()
         .expect("a valid logger");
         let first_msg = "message logged to file";
-        log.logm(Some(Domain::App), Level::Warn, first_msg);
-        log.logm(
-            Some(Domain::DB),
-            Level::Warn,
-            "other message logged to file",
-        );
-
+        log.log(Level::Warn)
+            .with_domain(Domain::App)
+            .message(first_msg);
+        log.log(Level::Warn)
+            .with_domain(Domain::DB)
+            .message("other message logged to file");
         let mut file = File::open(file_path).expect("file should exist");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).expect("file read");
@@ -193,7 +192,7 @@ mod tests {
     }
 
     /*
-     * NOTE The following tests all rely on NSLogger to be running.
+     * NOTE The following tests all rely on the NSLogger desktop application to be running.
      */
 
     #[test]
@@ -201,29 +200,20 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn creates_logger_instance() {
         let log = Logger::default();
-        log.logm(Some(Domain::App), Level::Warn, "test");
-        log.logm(Some(Domain::DB), Level::Error, "test1");
-        log.logm(Some(Domain::DB), Level::Debug, "test2");
-        log.logm(Some(Domain::DB), Level::Warn, "test");
-        log.logm(Some(Domain::DB), Level::Error, "test1");
-        log.logm(Some(Domain::DB), Level::Debug, "test2");
-        log.logm(
-            Some(Domain::Custom("MyCustomDomain".to_string())),
-            Level::Debug,
-            "Tag test!",
-        );
-        log.log("Just a simple message");
+        log.log(Level::Warn)
+            .with_domain(Domain::App)
+            .message("warning msg");
+        log.log(Level::Error)
+            .with_domain(Domain::DB)
+            .message("error msg");
+        log.log(Level::Debug)
+            .with_domain(Domain::DB)
+            .message("debug msg");
+        log.log(Level::Debug)
+            .with_domain(Domain::Custom("MyCustomDomain".to_string()))
+            .message("Tag test");
+        log.log(Level::Info).message("Just a simple message");
         std::thread::sleep(Duration::from_secs(2));
-    }
-
-    #[test]
-    #[serial]
-    #[cfg_attr(not(feature = "desktop-integration"), ignore)]
-    fn connects_via_bonjour_with_ssl() {
-        let log: Logger = Config::default().try_into().unwrap();
-        log.logm(Some(Domain::App), Level::Warn, "test1");
-        log.logm(Some(Domain::App), Level::Warn, "test2");
-        log.logm(Some(Domain::App), Level::Warn, "test3");
     }
 
     #[test]
@@ -231,11 +221,9 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_empty_domain() {
         let log: Logger = Config::default().try_into().unwrap();
-        log.logm(
-            Some(Domain::Custom("".to_string())),
-            Level::Warn,
-            "no domain should appear",
-        );
+        log.log(Level::Warn)
+            .with_domain(Domain::Custom("".to_string()))
+            .message("no domain should appear");
         std::thread::sleep(Duration::from_secs(2));
     }
 
@@ -251,14 +239,13 @@ mod tests {
         )
         .try_into()
         .expect("a valid logger");
-        log.logm(Some(Domain::App), Level::Warn, "message logged to file");
+        log.log(Level::Warn).message("message logged to file");
         log.set_bonjour_service_mode(BonjourServiceType::Default(false))
             .expect("setting bonjour");
-        log.logm(
-            Some(Domain::App),
-            Level::Warn,
-            "message previously logged to file",
-        );
+        log.log(Level::Warn).message(format!(
+            "previous message should have been logged to file {}",
+            tempfile.path().as_os_str().to_string_lossy()
+        ));
     }
 
     #[test]
@@ -267,31 +254,14 @@ mod tests {
     fn switches_from_bonjour_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let log: Logger = Config::default().try_into().unwrap();
-        log.logm(
-            Some(Domain::App),
-            Level::Warn,
-            "message first logged to Bonjour",
-        );
+        log.log(Level::Warn).message(format!(
+            "message first logged to Bonjour, next one should appear in {}",
+            tempfile.path().as_os_str().to_string_lossy()
+        ));
         log.set_file_mode(tempfile.path().to_path_buf())
             .expect("setting file path"); // File extension is constrained!!
-        log.logm(
-            Some(Domain::App),
-            Level::Warn,
-            "message shifted from Bonjour to file",
-        );
-    }
-
-    #[test]
-    #[serial]
-    #[cfg_attr(not(feature = "desktop-integration"), ignore)]
-    fn flushes_log_messages() {
-        let log: Logger = Config::default().try_into().unwrap();
-        log.logm(Some(Domain::App), Level::Warn, "flush test");
-        log.logm(Some(Domain::DB), Level::Error, "flush test1");
-        log.logm(Some(Domain::DB), Level::Debug, "flush test2");
-        log.logm(Some(Domain::DB), Level::Warn, "flush test");
-        log.logm(Some(Domain::DB), Level::Error, "flush test1");
-        log.logm(Some(Domain::DB), Level::Debug, "flush test2");
+        log.log(Level::Warn)
+            .message("message shifted from Bonjour to file");
     }
 
     #[test]
@@ -299,10 +269,9 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_mark() {
         let log: Logger = Config::default().try_into().unwrap();
-        log.logm(Some(Domain::App), Level::Warn, "before mark 1");
-        log.logm(Some(Domain::DB), Level::Error, "before mark 2");
+        log.log(Level::Error).message("before mark");
         log.log_mark(Some("this is a mark"));
-        log.logm(Some(Domain::DB), Level::Debug, "after mark");
+        log.log(Level::Error).message("after mark");
     }
 
     #[test]
@@ -310,10 +279,9 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_empty_mark() {
         let log: Logger = Config::default().try_into().unwrap();
-        log.logm(Some(Domain::App), Level::Warn, "before mark 1");
-        log.logm(Some(Domain::DB), Level::Error, "before mark 2");
+        log.log(Level::Error).message("before empty mark");
         log.log_mark(None);
-        log.logm(Some(Domain::DB), Level::Debug, "after mark");
+        log.log(Level::Error).message("after empty mark");
     }
 
     #[test]
@@ -328,7 +296,7 @@ mod tests {
         file_handle.read_to_end(&mut buffer).unwrap();
 
         let log: Logger = Config::default().try_into().unwrap();
-        log.log_image(None, None, None, None, Level::Warn, &buffer);
+        log.log(Level::Warn).image(&buffer);
     }
 
     #[test]
@@ -339,6 +307,6 @@ mod tests {
         // should read 'log test'
 
         let log: Logger = Config::default().try_into().unwrap();
-        log.log_data(None, None, None, None, Level::Warn, &bytes);
+        log.log(Level::Warn).data(&bytes);
     }
 }

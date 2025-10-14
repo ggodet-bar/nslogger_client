@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     path::{Path, PathBuf},
     sync::{Arc, Condvar, LazyLock, Mutex},
 };
@@ -16,7 +17,7 @@ mod network_manager;
 mod reference_counted_runtime;
 
 /*
- * Exports.
+ * Usage.
  */
 
 #[cfg(test)]
@@ -26,11 +27,11 @@ pub(crate) use self::{
     log_worker::{LogWorker, Message},
     reference_counted_runtime::ReferenceCountedRuntime,
 };
-use crate::nslogger::reference_counted_runtime::RuntimeHandle;
 pub use crate::nslogger::{
     config::Config, log_message::Domain, log_worker::ConnectionMode,
     network_manager::BonjourServiceType,
 };
+use crate::nslogger::{log_message::LogMessageBuilder, reference_counted_runtime::RuntimeHandle};
 
 /*
  * Constants & global variables.
@@ -87,6 +88,73 @@ impl Signal {
     }
 }
 
+/// High-level builder and dispatcher for log messages, defined as:
+///
+/// - an optional source description ([`MessageBuilder::with_source_descriptor`])
+/// - an optional domain/tag ([`MessageBuilder::with_domain`])
+/// - a terminal message, either a string-like object ([`MessageBuilder::message`]), a byte buffer
+///   representing an image ([`MessageBuilder::image`]) or a nondescript data byte buffer
+///   ([`MessageBuilder::data`]).
+pub struct MessageBuilder<'a>(LogMessageBuilder<'a>, &'a Logger);
+
+impl<'a> MessageBuilder<'a> {
+    /// Adds a source file descriptor to the prepared log message.
+    pub fn with_source_descriptor(
+        self,
+        filename: Option<&Path>,
+        line_number: Option<u32>,
+        method: Option<&'a str>,
+    ) -> Self {
+        Self(
+            self.0
+                .with_string_opt(
+                    MessagePartKey::FileName,
+                    filename.map(|p| p.to_string_lossy().into_owned()),
+                )
+                .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
+                .with_string_opt(MessagePartKey::FunctionName, method),
+            self.1,
+        )
+    }
+
+    /// Adds a `domain` to the prepared log message.
+    pub fn with_domain(self, domain: Domain) -> Self {
+        Self(
+            self.0.with_string(MessagePartKey::Tag, domain.to_string()),
+            self.1,
+        )
+    }
+
+    /// Finalizes the log message with an `image` bytes part and dispatches it to the log worker.
+    pub fn image(self, image: &'a [u8]) {
+        let log_message = self
+            .0
+            .with_image_data(MessagePartKey::Message, image)
+            .freeze();
+        self.1.log_and_flush(log_message);
+    }
+
+    /// Finalizes the log message with a `data` part data and dispatches it to the log worker.
+    pub fn data(self, data: &'a [u8]) {
+        let log_message = self
+            .0
+            .with_binary_data(MessagePartKey::Message, data)
+            .freeze();
+        self.1.log_and_flush(log_message);
+    }
+
+    /// Finalizes the log message with a string-like `message` and dispatches it to the log worker.
+    pub fn message(self, message: impl Into<Cow<'a, str>>) {
+        let log_message = self
+            .0
+            .with_string(MessagePartKey::Message, message)
+            .freeze();
+        self.1.log_and_flush(log_message);
+    }
+}
+
+/// By default the `Logger` will leave the default connection mode untouched (cf the crate root
+/// documentation).
 pub struct Logger {
     /// Handle to the logger runtime.
     runtime_handle: RuntimeHandle,
@@ -185,29 +253,8 @@ impl Logger {
         }
     }
 
-    pub fn logl(
-        &self,
-        filename: Option<&Path>,
-        line_number: Option<u32>,
-        method: Option<&str>,
-        domain: Option<Domain>,
-        level: log::Level,
-        message: &str,
-    ) {
-        let log_message = LogMessage::log(level)
-            .with_source_descriptor(filename, line_number, method)
-            .with_domain_opt(domain)
-            .with_string(MessagePartKey::Message, message)
-            .freeze();
-        self.log_and_flush(log_message);
-    }
-
-    pub fn logm(&self, domain: Option<Domain>, level: log::Level, message: &str) {
-        self.logl(None, None, None, domain, level, message);
-    }
-
-    pub fn log(&self, message: &str) {
-        self.logm(None, log::Level::Error, message);
+    pub fn log<'a>(&'a self, level: log::Level) -> MessageBuilder<'a> {
+        MessageBuilder(LogMessage::log(level), &self)
     }
 
     /// Log a mark to the desktop viewer.
@@ -217,40 +264,6 @@ impl Logger {
     pub fn log_mark(&self, message: Option<&str>) {
         let log_message = LogMessage::mark(message);
         self.log_and_flush(log_message)
-    }
-
-    pub fn log_data(
-        &self,
-        filename: Option<&Path>,
-        line_number: Option<u32>,
-        method: Option<&str>,
-        domain: Option<Domain>,
-        level: log::Level,
-        data: &[u8],
-    ) {
-        let log_message = LogMessage::log(level)
-            .with_source_descriptor(filename, line_number, method)
-            .with_domain_opt(domain)
-            .with_binary_data(MessagePartKey::Message, data)
-            .freeze();
-        self.log_and_flush(log_message)
-    }
-
-    pub fn log_image(
-        &self,
-        filename: Option<&Path>,
-        line_number: Option<u32>,
-        method: Option<&str>,
-        domain: Option<Domain>,
-        level: log::Level,
-        data: &[u8],
-    ) {
-        let log_message = LogMessage::log(level)
-            .with_source_descriptor(filename, line_number, method)
-            .with_domain_opt(domain)
-            .with_image_data(MessagePartKey::Message, data)
-            .freeze();
-        self.log_and_flush(log_message);
     }
 }
 
@@ -267,14 +280,13 @@ impl log::Log for Logger {
             return;
         }
 
-        self.logl(
-            record.file().map(Path::new),
-            record.line(),
-            Some(record.target()),
-            None,
-            record.level(),
-            &format!("{}", record.args()),
-        );
+        self.log(record.level())
+            .with_source_descriptor(
+                record.file().map(Path::new),
+                record.line(),
+                Some(record.target()),
+            )
+            .message(&format!("{}", record.args()));
     }
 
     fn flush(&self) {}

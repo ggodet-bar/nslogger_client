@@ -20,7 +20,7 @@ pub enum BonjourServiceStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BonjourServiceType {
-    /// Service type, and whether to use SSL
+    /// Custom Bonjour service handle, and whether to use SSL
     Custom(String, bool),
     /// Defines whether to use SSL
     Default(bool),

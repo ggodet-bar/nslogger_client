@@ -254,7 +254,7 @@ impl<'a> LogMessageBuilder<'a> {
         self
     }
 
-    fn with_int32_opt(self, key: MessagePartKey, value: Option<u32>) -> Self {
+    pub(crate) fn with_int32_opt(self, key: MessagePartKey, value: Option<u32>) -> Self {
         let Some(value) = value else {
             return self;
         };
@@ -294,27 +294,9 @@ impl<'a> LogMessageBuilder<'a> {
         self.with_string(key, string)
     }
 
-    pub fn with_domain_opt(self, domain: Option<Domain>) -> Self {
-        self.with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
-    }
-
     /// Current size of the serialized message, in bytes.
     fn size(&self) -> usize {
         self.0.iter().map(MessagePart::size).sum::<usize>() + 6
-    }
-
-    pub fn with_source_descriptor(
-        self,
-        filename: Option<&Path>,
-        line_number: Option<u32>,
-        method: Option<&'a str>,
-    ) -> Self {
-        self.with_string_opt(
-            MessagePartKey::FileName,
-            filename.map(|p| p.to_string_lossy().into_owned()),
-        )
-        .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
-        .with_string_opt(MessagePartKey::FunctionName, method)
     }
 
     pub fn with_binary_data(self, key: MessagePartKey, bytes: &'a [u8]) -> Self {
