@@ -3,9 +3,30 @@
 
 //! A client for the MacOS [NSLogger](https://github.com/fpillet/NSLogger) log viewer.
 //!
+//!## Logger configuration
+//!
+//! By default, `nslogger_client` connects to the default application using the default Bonjour
+//! service handles (`_nslogger._tcp.` and `_nslogger-ssl._tc.`) with no message flushing.
+//!
+//! `nslogger_client` may be configured via the following environment variables:
+//!
+//! - `NSLOG_LEVEL` - maximum log level, with `TRACE` being the highest value and `ERROR` the lowest
+//!   (cf [`log::Level`]);
+//! - `NSLOG_FLUSH` - whether the logger should wait for the desktop application to send an ack
+//!   signal after each message;
+//! - `NSLOG_FILENAME` - switches the logger to print messages to the given filepath **instead** of
+//!   the destkop application;
+//! - `NSLOG_BONJOUR_SERVICE` - switches the logger to connect to the desktop application using the
+//!   given Bonjour handler;
+//! - `NSLOG_USE_SSL` - switches the logger to connect to the desktop application (whether via
+//!   Bonjour or a direct TCP connection) with or without SSL (`0` disables SSL, any other value
+//!   enables it);
+//! - `NSLOG_HOST` - switches the logger to connect to the desktop application via TCP using the
+//!   `<address>:<port>` format. Domain name resolution is supported;
+//!
 //!## Examples
 //!
-//!Using the `log` crate facade
+//! Using the `log` crate facade
 //!
 //!```rust
 //! use log::info;

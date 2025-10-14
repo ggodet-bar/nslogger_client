@@ -127,6 +127,7 @@ impl LogWorker {
         Ok(())
     }
 
+    /// Returns a strictly monotonic sequence number.
     fn generate_sequence_nb(&mut self) -> u32 {
         let nb = self.sequence_generator;
         self.sequence_generator += 1;

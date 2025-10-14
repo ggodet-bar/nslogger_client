@@ -56,7 +56,8 @@ impl Config {
         }
     }
 
-    /// Parses the environment variables into a logger config.
+    /// Parses the environment variables into a logger config. Refer to the root crate documentation
+    /// for details on the supported variables.
     pub fn parse_env() -> Self {
         Self::parse_with_getter(|key| env::var(key).ok())
     }
@@ -130,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn sets_remote_host_from_env() {
+    fn sets_local_host_from_env() {
         let env: HashMap<_, _> = [("NSLOG_HOST".to_string(), "127.0.0.1:50000".to_string())]
             .into_iter()
             .collect();
@@ -138,6 +139,21 @@ mod tests {
             Config {
                 filter: log::LevelFilter::Warn,
                 mode: ConnectionMode::Tcp("127.0.0.1".to_string(), 50000, true),
+                flush_messages: false
+            },
+            Config::parse_with_getter(|key| { env.get(key).cloned() })
+        );
+    }
+
+    #[test]
+    fn sets_remote_host_from_env() {
+        let env: HashMap<_, _> = [("NSLOG_HOST".to_string(), "example.org:50000".to_string())]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            Config {
+                filter: log::LevelFilter::Warn,
+                mode: ConnectionMode::Tcp("example.org".to_string(), 50000, true),
                 flush_messages: false
             },
             Config::parse_with_getter(|key| { env.get(key).cloned() })
