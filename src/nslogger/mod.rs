@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
  * Module declarations.
  */
 
+mod config;
 mod log_message;
 mod log_worker;
 mod network_manager;
@@ -23,6 +24,7 @@ mod reference_counted_runtime;
 #[cfg(test)]
 pub(crate) use self::log_message::{LogMessageType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
+    config::Config,
     log_message::{LogMessage, MessagePartKey},
     log_worker::{LogWorker, Message},
     reference_counted_runtime::ReferenceCountedRuntime,
@@ -84,6 +86,7 @@ impl Signal {
         self.0.condition.notify_all();
     }
 }
+
 pub struct Logger {
     ready_signal: Signal,
     message_tx: mpsc::UnboundedSender<Message>,
