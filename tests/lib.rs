@@ -1,4 +1,4 @@
-use std::sync::Once;
+use std::{sync::Once, thread::sleep, time::Duration};
 
 #[macro_use]
 extern crate log;
@@ -24,6 +24,8 @@ fn logs_simple_messages() {
     trace!("This is an NSLogger trace message");
     warn!("This is an NSLogger warn message");
     error!("This is an NSLogger error message");
+
+    sleep(Duration::from_millis(500));
 }
 
 #[test]
@@ -66,8 +68,6 @@ fn logs_messages_starting_from_different_threads() {
         handle.join().unwrap();
     }
 
-    use std::{thread, time};
-
-    let ten_millis = time::Duration::from_secs(2);
-    thread::sleep(ten_millis);
+    let ten_millis = Duration::from_secs(2);
+    sleep(ten_millis);
 }
