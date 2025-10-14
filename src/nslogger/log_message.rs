@@ -158,8 +158,8 @@ impl LogMessage {
     }
 
     /// Returns a log message builder.
-    pub fn log<'a>() -> LogMessageBuilder<'a> {
-        LogMessageBuilder::new(LogMessageType::Log)
+    pub fn log<'a>(level: log::Level) -> LogMessageBuilder<'a> {
+        LogMessageBuilder::new(LogMessageType::Log).with_int16(MessagePartKey::Level, level as u16)
     }
 
     /// Sets the message's unique sequence number, upon sending it to the log worker.
@@ -305,16 +305,14 @@ impl<'a> LogMessageBuilder<'a> {
         line_number: Option<u32>,
         method: Option<&'a str>,
         domain: Option<Domain>,
-        level: log::Level,
     ) -> Self {
-        self.with_int16(MessagePartKey::Level, level as u16)
-            .with_string_opt(
-                MessagePartKey::FileName,
-                filename.map(|p| p.to_string_lossy().into_owned()),
-            )
-            .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
-            .with_string_opt(MessagePartKey::FunctionName, method)
-            .with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
+        self.with_string_opt(
+            MessagePartKey::FileName,
+            filename.map(|p| p.to_string_lossy().into_owned()),
+        )
+        .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
+        .with_string_opt(MessagePartKey::FunctionName, method)
+        .with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
     }
 
     pub fn with_binary_data(self, key: MessagePartKey, bytes: &'a [u8]) -> Self {

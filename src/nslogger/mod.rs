@@ -1,6 +1,5 @@
 use std::{
     path::{Path, PathBuf},
-    str::FromStr,
     sync::{Arc, Condvar, LazyLock, Mutex},
 };
 
@@ -195,8 +194,8 @@ impl Logger {
         level: log::Level,
         message: &str,
     ) {
-        let log_message = LogMessage::log()
-            .with_header(filename, line_number, method, domain, level)
+        let log_message = LogMessage::log(level)
+            .with_header(filename, line_number, method, domain)
             .with_string(MessagePartKey::Message, message)
             .freeze();
         self.log_and_flush(log_message);
@@ -228,8 +227,8 @@ impl Logger {
         level: log::Level,
         data: &[u8],
     ) {
-        let log_message = LogMessage::log()
-            .with_header(filename, line_number, method, domain, level)
+        let log_message = LogMessage::log(level)
+            .with_header(filename, line_number, method, domain)
             .with_binary_data(MessagePartKey::Message, data)
             .freeze();
         self.log_and_flush(log_message)
@@ -244,8 +243,8 @@ impl Logger {
         level: log::Level,
         data: &[u8],
     ) {
-        let log_message = LogMessage::log()
-            .with_header(filename, line_number, method, domain, level)
+        let log_message = LogMessage::log(level)
+            .with_header(filename, line_number, method, domain)
             .with_image_data(MessagePartKey::Message, data)
             .freeze();
         self.log_and_flush(log_message);
@@ -268,8 +267,8 @@ impl log::Log for Logger {
         self.logl(
             record.file().map(Path::new),
             record.line(),
+            Some(record.target()),
             None,
-            Some(Domain::from_str(record.target()).unwrap()),
             record.level(),
             &format!("{}", record.args()),
         );
