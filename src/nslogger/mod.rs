@@ -5,7 +5,6 @@ use std::{
 };
 
 use cfg_if::cfg_if;
-use tokio::sync::mpsc;
 
 /*
  * Module declarations.
@@ -24,13 +23,15 @@ mod reference_counted_runtime;
 #[cfg(test)]
 pub(crate) use self::log_message::{LogMessageType, SEQUENCE_NB_OFFSET};
 pub(crate) use self::{
-    config::Config,
     log_message::{LogMessage, MessagePartKey},
     log_worker::{LogWorker, Message},
     reference_counted_runtime::ReferenceCountedRuntime,
 };
-pub use self::{log_worker::ConnectionMode, network_manager::BonjourServiceType};
-pub use crate::nslogger::log_message::Domain;
+use crate::nslogger::reference_counted_runtime::RuntimeHandle;
+pub use crate::nslogger::{
+    config::Config, log_message::Domain, log_worker::ConnectionMode,
+    network_manager::BonjourServiceType,
+};
 
 /*
  * Constants & global variables.
@@ -67,7 +68,7 @@ struct InnerSignal {
 /// Shareable struct for parking threads until a condition - whose state is stored internally - is
 /// reached. Waiting threads are freed by calling `signal`.
 #[derive(Debug, Clone, Default)]
-pub struct Signal(Arc<InnerSignal>);
+pub(crate) struct Signal(Arc<InnerSignal>);
 
 impl Signal {
     /// Parks calling threads unless the signal condition has been reached.
@@ -88,10 +89,11 @@ impl Signal {
 }
 
 pub struct Logger {
-    ready_signal: Signal,
-    message_tx: mpsc::UnboundedSender<Message>,
+    /// Handle to the logger runtime.
+    runtime_handle: RuntimeHandle,
+    /// Maximum log level.
     filter: log::LevelFilter,
-    /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer)
+    /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer).
     flush_messages: bool,
 }
 
@@ -110,10 +112,7 @@ impl TryFrom<Config> for Logger {
             flush_messages,
             ..Default::default()
         };
-        logger
-            .message_tx
-            .send(Message::SwitchConnection(mode))
-            .map_err(|_| Error::ChannelNotAvailable)?;
+        logger.runtime_handle.switch_connection_mode(mode)?;
         Ok(logger)
     }
 }
@@ -137,11 +136,8 @@ impl Default for Logger {
 
             init_test_logger();
         }
-        let (ready_signal, message_tx) = (*RUNTIME).get_signal_and_sender();
-
         Logger {
-            message_tx,
-            ready_signal,
+            runtime_handle: (*RUNTIME).get_handle(),
             filter: log::LevelFilter::Warn,
             flush_messages: false,
         }
@@ -149,34 +145,29 @@ impl Default for Logger {
 }
 
 impl Logger {
-    pub fn set_bonjour_service(&mut self, service: BonjourServiceType) -> Result<(), Error> {
+    pub fn set_bonjour_service_mode(&mut self, service: BonjourServiceType) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Bonjour(service);
-        self.message_tx
-            .send(Message::SwitchConnection(connection_mode))
-            .map_err(|_| Error::ChannelNotAvailable)?;
+        self.runtime_handle
+            .switch_connection_mode(connection_mode)?;
         Ok(())
     }
 
-    pub fn set_remote_host(
+    pub fn set_remote_host_mode(
         &self,
         host_name: &str,
         host_port: u16,
         use_ssl: bool,
     ) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Tcp(host_name.to_string(), host_port, use_ssl);
-        self.message_tx
-            .send(Message::SwitchConnection(connection_mode))
-            .map_err(|_| Error::ChannelNotAvailable)?;
+        self.runtime_handle
+            .switch_connection_mode(connection_mode)?;
         Ok(())
     }
 
-    pub fn set_log_file_path(&self, file_path: &str) -> Result<(), Error> {
-        let connection_mode = ConnectionMode::File(
-            PathBuf::from_str(file_path).map_err(|_| Error::InvalidPath(file_path.to_string()))?,
-        );
-        self.message_tx
-            .send(Message::SwitchConnection(connection_mode))
-            .map_err(|_| Error::ChannelNotAvailable)?;
+    pub fn set_file_mode(&self, file_path: PathBuf) -> Result<(), Error> {
+        let connection_mode = ConnectionMode::File(file_path);
+        self.runtime_handle
+            .switch_connection_mode(connection_mode)?;
         Ok(())
     }
 
@@ -188,8 +179,8 @@ impl Logger {
         if DEBUG_LOGGER {
             log::info!("entering log");
         }
-        self.start_logging_thread_if_needed();
-        self.send_and_flush(log_message);
+        self.runtime_handle
+            .send_and_flush(log_message, self.flush_messages);
         if DEBUG_LOGGER {
             log::info!("Exiting log");
         }
@@ -258,36 +249,6 @@ impl Logger {
             .with_image_data(MessagePartKey::Message, data)
             .freeze();
         self.log_and_flush(log_message);
-    }
-
-    fn start_logging_thread_if_needed(&self) {
-        if DEBUG_LOGGER {
-            log::info!("waiting for worker to be ready");
-        }
-
-        self.ready_signal.wait();
-
-        if DEBUG_LOGGER {
-            log::info!("worker is ready and running");
-        }
-    }
-
-    fn send_and_flush(&self, log_message: LogMessage) {
-        let flush_signal = self.flush_messages.then(Signal::default);
-        self.message_tx
-            .send(Message::AddLog(log_message, flush_signal.clone()))
-            .unwrap();
-
-        let Some(signal) = flush_signal else {
-            return;
-        };
-        if DEBUG_LOGGER {
-            log::info!("waiting for message flush");
-        }
-        signal.wait();
-        if DEBUG_LOGGER {
-            log::info!("message flush ack received");
-        }
     }
 }
 

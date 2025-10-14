@@ -2,8 +2,8 @@ use std::{env, path::PathBuf, str::FromStr};
 
 use crate::nslogger::{BonjourServiceType, ConnectionMode};
 
-#[derive(Debug, PartialEq)]
-pub(crate) struct Config {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Config {
     /// Max logging level.
     pub filter: log::LevelFilter,
 
@@ -16,6 +16,14 @@ pub(crate) struct Config {
 }
 
 impl Config {
+    pub fn new(filter: log::LevelFilter, mode: ConnectionMode, flush_messages: bool) -> Self {
+        Self {
+            filter,
+            mode,
+            flush_messages,
+        }
+    }
+
     /// Parses the environment variables into a logger config.
     pub fn parse_env() -> Self {
         let connection_mode = if let Ok(val) = env::var("NSLOG_FILENAME") {

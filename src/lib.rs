@@ -35,8 +35,7 @@
 
 mod nslogger;
 
-use nslogger::Config;
-pub use nslogger::{BonjourServiceType, ConnectionMode, Domain, Logger};
+pub use nslogger::{BonjourServiceType, Config, ConnectionMode, Domain, Logger};
 
 /// Initializes the global logger with a Logger instance.
 ///
@@ -58,17 +57,31 @@ mod tests {
     use serial_test::serial;
     use tempfile::NamedTempFile;
 
-    use crate::nslogger::{BonjourServiceType, Domain, LogMessageType, Logger, SEQUENCE_NB_OFFSET};
+    use crate::{
+        nslogger::{
+            BonjourServiceType, Config, Domain, LogMessageType, Logger, SEQUENCE_NB_OFFSET,
+        },
+        ConnectionMode,
+    };
+
+    impl Default for Config {
+        fn default() -> Self {
+            Self::new(log::LevelFilter::Info, ConnectionMode::default(), true)
+        }
+    }
 
     #[test]
     #[serial]
     fn logs_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let file_path = tempfile.into_temp_path();
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
-        log.set_log_file_path(file_path.to_str().unwrap())
-            .expect("setting file path"); // File extension is constrained!!
+        let log: Logger = Config::new(
+            log::LevelFilter::Info,
+            ConnectionMode::File(file_path.to_path_buf()),
+            true,
+        )
+        .try_into()
+        .expect("a valid logger");
         let first_msg = "message logged to file";
         log.logm(Some(Domain::App), Level::Warn, first_msg);
         log.logm(
@@ -186,8 +199,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn connects_via_bonjour_with_ssl() {
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
+        let log: Logger = Config::default().try_into().unwrap();
         log.logm(Some(Domain::App), Level::Warn, "test1");
         log.logm(Some(Domain::App), Level::Warn, "test2");
         log.logm(Some(Domain::App), Level::Warn, "test3");
@@ -197,8 +209,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_empty_domain() {
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
+        let log: Logger = Config::default().try_into().unwrap();
         log.logm(
             Some(Domain::Custom("".to_string())),
             Level::Warn,
@@ -212,16 +223,16 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn switches_from_file_to_bonjour() {
         let tempfile = NamedTempFile::new().expect("temp file");
-
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
-        log.set_log_file_path(tempfile.into_temp_path().to_str().unwrap())
-            .expect("setting file path");
+        let mut log: Logger = Config::new(
+            log::LevelFilter::Info,
+            ConnectionMode::File(tempfile.path().to_path_buf()),
+            true,
+        )
+        .try_into()
+        .expect("a valid logger");
         log.logm(Some(Domain::App), Level::Warn, "message logged to file");
-
-        log.set_bonjour_service(BonjourServiceType::Default(false))
+        log.set_bonjour_service_mode(BonjourServiceType::Default(false))
             .expect("setting bonjour");
-        // no matter the setting
         log.logm(
             Some(Domain::App),
             Level::Warn,
@@ -234,15 +245,13 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn switches_from_bonjour_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
-        let mut log = Logger::default();
+        let log: Logger = Config::default().try_into().unwrap();
         log.logm(
             Some(Domain::App),
             Level::Warn,
             "message first logged to Bonjour",
         );
-
-        log.set_message_flushing(true);
-        log.set_log_file_path(tempfile.into_temp_path().to_str().unwrap())
+        log.set_file_mode(tempfile.path().to_path_buf())
             .expect("setting file path"); // File extension is constrained!!
         log.logm(
             Some(Domain::App),
@@ -255,8 +264,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn flushes_log_messages() {
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
+        let log: Logger = Config::default().try_into().unwrap();
         log.logm(Some(Domain::App), Level::Warn, "flush test");
         log.logm(Some(Domain::DB), Level::Error, "flush test1");
         log.logm(Some(Domain::DB), Level::Debug, "flush test2");
@@ -269,8 +277,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_mark() {
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
+        let log: Logger = Config::default().try_into().unwrap();
         log.logm(Some(Domain::App), Level::Warn, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
         log.log_mark(Some("this is a mark"));
@@ -281,8 +288,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_empty_mark() {
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
+        let log: Logger = Config::default().try_into().unwrap();
         log.logm(Some(Domain::App), Level::Warn, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
         log.log_mark(None);
@@ -300,8 +306,7 @@ mod tests {
 
         file_handle.read_to_end(&mut buffer).unwrap();
 
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
+        let log: Logger = Config::default().try_into().unwrap();
         log.log_image(None, None, None, None, Level::Warn, &buffer);
     }
 
@@ -312,8 +317,7 @@ mod tests {
         let bytes: [u8; 8] = [0x6c, 0x6f, 0x67, 0x20, 0x74, 0x65, 0x73, 0x74];
         // should read 'log test'
 
-        let mut log = Logger::default();
-        log.set_message_flushing(true);
+        let log: Logger = Config::default().try_into().unwrap();
         log.log_data(None, None, None, None, Level::Warn, &bytes);
     }
 }

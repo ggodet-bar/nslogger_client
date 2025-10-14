@@ -5,10 +5,46 @@ use tokio::{
     sync::mpsc,
 };
 
-use crate::nslogger::{
-    network_manager, network_manager::BonjourServiceType, Error, LogWorker, Message, Signal,
-    DEBUG_LOGGER,
+use crate::{
+    nslogger::{network_manager, Error, LogMessage, LogWorker, Message, Signal, DEBUG_LOGGER},
+    ConnectionMode,
 };
+
+/// Synchronizes with the logger runtime and handles message sending and flushing.
+pub struct RuntimeHandle {
+    /// Waits for the log worker to have completed its setup.
+    ready: Signal,
+    /// Sends finalized messages to the log worker for processing and dispatch.
+    message_tx: mpsc::UnboundedSender<Message>,
+}
+
+impl RuntimeHandle {
+    pub fn switch_connection_mode(&self, mode: ConnectionMode) -> Result<(), Error> {
+        self.ready.wait();
+        self.message_tx
+            .send(Message::SwitchConnection(mode))
+            .map_err(|_| Error::ChannelNotAvailable)
+    }
+
+    pub fn send_and_flush(&self, log_message: LogMessage, flush_message: bool) {
+        self.ready.wait();
+        let flush_signal = flush_message.then(Signal::default);
+        self.message_tx
+            .send(Message::AddLog(log_message, flush_signal.clone()))
+            .unwrap();
+
+        let Some(signal) = flush_signal else {
+            return;
+        };
+        if DEBUG_LOGGER {
+            log::info!("waiting for message flush");
+        }
+        signal.wait();
+        if DEBUG_LOGGER {
+            log::info!("message flush ack received");
+        }
+    }
+}
 
 struct InnerRcRuntime {
     runtime: Option<Runtime>,
@@ -36,53 +72,48 @@ impl ReferenceCountedRuntime {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let ready_signal = Signal::default();
 
-        let state = InnerRcRuntime {
-            runtime: Some(
-                Builder::new_multi_thread()
-                    .enable_io()
-                    .enable_time()
-                    .build()?,
-            ),
-            message_tx: message_tx.clone(),
-        };
-        Self::setup_network_manager(message_tx, command_rx, state.runtime.as_ref().unwrap())?;
-        Self::setup_message_worker(
-            command_tx,
-            message_rx,
-            ready_signal.clone(),
-            state.runtime.as_ref().unwrap(),
-        )?;
-        Ok(Self(ready_signal, Arc::new(Mutex::new(state))))
-    }
-
-    fn setup_network_manager(
-        message_tx: mpsc::UnboundedSender<Message>,
-        command_rx: mpsc::UnboundedReceiver<BonjourServiceType>,
-        runtime: &Runtime,
-    ) -> Result<(), Error> {
-        runtime.spawn(async move {
-            network_manager::NetworkManager::new(command_rx, message_tx)
-                .run()
-                .await
+        let runtime = Builder::new_multi_thread()
+            .enable_io()
+            .enable_time()
+            .build()?;
+        /*
+         * Spawn the network manager.
+         */
+        runtime.spawn({
+            let message_tx = message_tx.clone();
+            async move {
+                network_manager::NetworkManager::new(command_rx, message_tx.clone())
+                    .run()
+                    .await
+            }
         });
-        Ok(())
-    }
-
-    fn setup_message_worker(
-        command_tx: mpsc::UnboundedSender<BonjourServiceType>,
-        message_rx: mpsc::UnboundedReceiver<Message>,
-        ready_signal: Signal,
-        runtime: &Runtime,
-    ) -> Result<(), Error> {
-        runtime.spawn(async {
-            LogWorker::new(command_tx, message_rx, ready_signal)
-                .run()
-                .await
+        /*
+         * Spawn the log worker.
+         */
+        runtime.spawn({
+            let ready_signal = ready_signal.clone();
+            async move {
+                LogWorker::new(command_tx, message_rx, ready_signal)
+                    .run()
+                    .await
+            }
         });
-        Ok(())
+        /*
+         * Return the runtime.
+         */
+        Ok(Self(
+            ready_signal,
+            Arc::new(Mutex::new(InnerRcRuntime {
+                runtime: Some(runtime),
+                message_tx,
+            })),
+        ))
     }
 
-    pub fn get_signal_and_sender(&self) -> (Signal, mpsc::UnboundedSender<Message>) {
-        (self.0.clone(), self.1.lock().unwrap().message_tx.clone())
+    pub fn get_handle(&self) -> RuntimeHandle {
+        RuntimeHandle {
+            ready: self.0.clone(),
+            message_tx: self.1.lock().unwrap().message_tx.clone(),
+        }
     }
 }
