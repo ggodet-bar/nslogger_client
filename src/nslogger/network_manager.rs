@@ -26,6 +26,7 @@ pub enum BonjourServiceType {
     Default(bool),
 }
 
+/// Handles Bonjour service discovery, based on the commands it receives.
 pub struct NetworkManager {
     command_rx: mpsc::UnboundedReceiver<BonjourServiceType>,
     message_tx: mpsc::UnboundedSender<Message>,

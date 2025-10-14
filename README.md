@@ -32,7 +32,10 @@ service handle with SSL (`_nslogger-ssl._tcp.`) with no message flushing.
 
 ## Examples
 
-Using the `log` crate facade
+`nslogger` client may be used either as a logging provider for the [`log`] facade, similarly to
+[`env_logger`](https://docs.rs/env_logger/latest/env_logger), or as a standalone logger.
+
+### Using the `log` crate facade
 
 ```rust
 use log::info;
@@ -41,7 +44,7 @@ nslogger::init();
 info!("this is an NSLogger message");
 ```
 
-Using the `nslogger_client` API:
+### Using the `nslogger_client` API:
 
 ```rust
 use nslogger::{Logger, Domain};
@@ -49,9 +52,17 @@ use log::Level;
 
 let logger = Logger::default();
 logger.log(Level::Info).with_domain(Domain::App).message("starting application");
-logger.log_mark(None); // will display a mark with no label in the NSLogger viewer
+logger.log_mark(None);
+let image_buffer = ...; // Code for reading an image into a byte buffer;
+logger.log(Level::Info).image(image_buffer);
 logger.log(Level::Info).with_domain(Domain::App).message("leaving application");
 ```
+
+This will generate the following display in the NSLogger desktop application:
+
+<p align="center">
+  <img src="Screenshots/sample-snapshot.png" title="Sample snapshot">
+</p>
 
 ## NOT supported:
 

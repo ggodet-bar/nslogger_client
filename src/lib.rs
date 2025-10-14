@@ -26,7 +26,11 @@
 //!
 //! ## Examples
 //!
-//! Using the `log` crate facade
+//! `nslogger` client may be used either as a logging provider for the [`log`] facade, similarly to
+//! [`env_logger`](https://docs.rs/env_logger/latest/env_logger), or as a standalone logger.
+//!
+//!
+//! ### Using the `log` crate facade
 //!
 //!```rust
 //! use log::info;
@@ -35,15 +39,21 @@
 //! info!("this is an NSLogger message");
 //! ```
 //!
-//! Using the `nslogger_client` API:
+//! ### Using the `nslogger_client` API
 //!
 //!```rust
 //! use nslogger::{Logger, Domain};
 //! use log::Level;
-//!
-//! let logger = Logger::default();
+//! # use std::{env, fs::File, io::Read};
+//! # let image_path = &env::current_dir().unwrap().join("tests/fixtures/zebra.png");
+//! # let mut file_handle = File::open(image_path).unwrap();
+//! # let mut image_buffer = Vec::new();
+//! # file_handle.read_to_end(&mut image_buffer).unwrap();
+//! let mut logger = Logger::default();
+//! # logger.set_message_flushing(true);
 //! logger.log(Level::Info).with_domain(Domain::App).message("starting application");
 //! logger.log_mark(None); // will display a mark with no label in the NSLogger viewer
+//! logger.log(Level::Info).image(&image_buffer);
 //! logger.log(Level::Info).with_domain(Domain::App).message("leaving application");
 //! ```
 //!

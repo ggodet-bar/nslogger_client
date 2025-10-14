@@ -2,6 +2,7 @@ use std::{env, path::PathBuf, str::FromStr};
 
 use crate::nslogger::{BonjourServiceType, ConnectionMode};
 
+/// Logger configuration object.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// Max logging level.

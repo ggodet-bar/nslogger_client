@@ -2,6 +2,7 @@ use std::{borrow::Cow, env, ffi::OsStr, fmt, path::Path, str::FromStr, thread, t
 
 pub(crate) const SEQUENCE_NB_OFFSET: usize = 14;
 
+/// A tag-like concept, used for classification and sorting purposes in the desktop application.
 #[derive(Debug, PartialEq)]
 pub enum Domain {
     App,

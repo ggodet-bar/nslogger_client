@@ -88,13 +88,18 @@ impl Signal {
     }
 }
 
-/// High-level builder and dispatcher for log messages, defined as:
+/// High-level builder and dispatcher for log messages.
+///
+/// This builder constructs message in at most three steps:
 ///
 /// - an optional source description ([`MessageBuilder::with_source_descriptor`])
 /// - an optional domain/tag ([`MessageBuilder::with_domain`])
 /// - a terminal message, either a string-like object ([`MessageBuilder::message`]), a byte buffer
 ///   representing an image ([`MessageBuilder::image`]) or a nondescript data byte buffer
 ///   ([`MessageBuilder::data`]).
+///
+/// Calling one of the terminal methods will trigger the message's serialization and dispatch to the
+/// log worker runtime.
 pub struct MessageBuilder<'a>(LogMessageBuilder<'a>, &'a Logger);
 
 impl<'a> MessageBuilder<'a> {
@@ -153,8 +158,9 @@ impl<'a> MessageBuilder<'a> {
     }
 }
 
-/// By default the `Logger` will leave the default connection mode untouched (cf the crate root
-/// documentation).
+/// A client for building and sending the various types of log messages supported by NSLogger.
+///
+/// The default `Logger` will use the default connection mode (cf the crate root documentation).
 pub struct Logger {
     /// Handle to the logger runtime.
     runtime_handle: RuntimeHandle,
@@ -212,6 +218,8 @@ impl Default for Logger {
 }
 
 impl Logger {
+    /// Switches the logger to use provided Bonjour `service`, terminating any previous connection
+    /// to the desktop application.
     pub fn set_bonjour_service_mode(&mut self, service: BonjourServiceType) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Bonjour(service);
         self.runtime_handle
@@ -219,6 +227,8 @@ impl Logger {
         Ok(())
     }
 
+    /// Switches the logger to connect to the provided `host_name` and `port`, using SSL if defined
+    /// in `use_ssl`.This will terminate any previous connection to the desktop application.
     pub fn set_remote_host_mode(
         &self,
         host_name: &str,
@@ -231,6 +241,8 @@ impl Logger {
         Ok(())
     }
 
+    /// Switches the logger to dump its messages to the file set at `file_path`. This will terminate
+    /// any previous connection to the desktop application.
     pub fn set_file_mode(&self, file_path: PathBuf) -> Result<(), Error> {
         let connection_mode = ConnectionMode::File(file_path);
         self.runtime_handle
@@ -238,6 +250,8 @@ impl Logger {
         Ok(())
     }
 
+    /// Sets whether, after sending a log message, the client should wait for an acknowledgment from
+    /// the desktop application (or a disk flush if writing to disk) before proceeding.
     pub fn set_message_flushing(&mut self, flush_each_message: bool) {
         self.flush_messages = flush_each_message;
     }
@@ -253,6 +267,10 @@ impl Logger {
         }
     }
 
+    /// Starts building a log message with severity `level`.
+    ///
+    /// Refer to the [`MessageBuilder`] documentation for details on how to complete and dispatch
+    /// the log message.
     pub fn log<'a>(&'a self, level: log::Level) -> MessageBuilder<'a> {
         MessageBuilder(LogMessage::log(level), &self)
     }
