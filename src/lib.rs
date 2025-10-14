@@ -38,10 +38,21 @@ mod nslogger;
 
 pub use nslogger::{BonjourServiceType, ConnectionMode, Domain, Logger};
 
-/// Parses the environment variables to identify the max logging level, the type of connection to
-/// NSLogger (or the log file path), and whether the logger should wait for each message to be
-/// handled before returning from the log calls.
-fn parse_env() -> (log::LevelFilter, ConnectionMode, bool) {
+#[derive(Debug, PartialEq)]
+struct Config {
+    /// Max logging level.
+    filter: log::LevelFilter,
+
+    /// Type of connection to the desktop app (or log file path).
+    mode: ConnectionMode,
+
+    /// Whether the logger should wait for each message to be handled by the log worker before
+    /// returnign from the log calls.
+    flush_messages: bool,
+}
+
+/// Parses the environment variables into a logger config.
+fn parse_env() -> Config {
     let connection_mode = if let Ok(val) = env::var("NSLOG_FILENAME") {
         PathBuf::from_str(&val)
             .map(ConnectionMode::File)
@@ -68,17 +79,24 @@ fn parse_env() -> (log::LevelFilter, ConnectionMode, bool) {
         .unwrap_or_default();
     let raw_level = env::var("NSLOG_LEVEL").unwrap_or("WARN".to_string());
     let level_filter = log::LevelFilter::from_str(&raw_level).unwrap_or(log::LevelFilter::Warn);
-    (level_filter, connection_mode, flush_messages)
+    Config {
+        filter: level_filter,
+        mode: connection_mode,
+        flush_messages,
+    }
 }
 
 /// Initializes the global logger with a Logger instance.
 ///
-/// This should be called early in the execution of a Rust program, and the
-/// global logger may only be initialized once. Future initialization
-/// attempts will return an error.
+/// This should be called early in the execution of a Rust program, and the global logger may only
+/// be initialized once. Future initialization attempts will return an error.
 pub fn init() -> Result<(), log::SetLoggerError> {
-    let (filter, connection_mode, flush_messages) = parse_env();
-    let logger = Logger::with_options(filter, connection_mode, flush_messages).unwrap();
+    let Config {
+        filter,
+        mode,
+        flush_messages,
+    } = parse_env();
+    let logger = Logger::with_options(filter, mode, flush_messages).unwrap();
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(filter);
     Ok(())
@@ -101,7 +119,11 @@ mod tests {
     #[serial]
     fn parses_default_env() {
         assert_eq!(
-            (log::LevelFilter::Warn, ConnectionMode::default(), false),
+            Config {
+                filter: log::LevelFilter::Warn,
+                mode: ConnectionMode::default(),
+                flush_messages: false
+            },
             parse_env()
         )
     }
@@ -113,11 +135,11 @@ mod tests {
             env::set_var("NSLOG_FILENAME", "/tmp/file_output.log");
         }
         assert_eq!(
-            (
-                log::LevelFilter::Warn,
-                ConnectionMode::File(PathBuf::from("/tmp/file_output.log")),
-                false
-            ),
+            Config {
+                filter: log::LevelFilter::Warn,
+                mode: ConnectionMode::File(PathBuf::from("/tmp/file_output.log")),
+                flush_messages: false
+            },
             parse_env()
         );
         unsafe {
@@ -132,7 +154,11 @@ mod tests {
             env::set_var("NSLOG_LEVEL", "INFO");
         }
         assert_eq!(
-            (log::LevelFilter::Info, ConnectionMode::default(), false),
+            Config {
+                filter: log::LevelFilter::Info,
+                mode: ConnectionMode::default(),
+                flush_messages: false
+            },
             parse_env()
         );
         unsafe {
@@ -147,11 +173,11 @@ mod tests {
             env::set_var("NSLOG_USE_SSL", "0");
         }
         assert_eq!(
-            (
-                log::LevelFilter::Warn,
-                ConnectionMode::Bonjour(BonjourServiceType::Default(false)),
-                false
-            ),
+            Config {
+                filter: log::LevelFilter::Warn,
+                mode: ConnectionMode::Bonjour(BonjourServiceType::Default(false)),
+                flush_messages: false
+            },
             parse_env()
         );
         unsafe {
@@ -166,11 +192,11 @@ mod tests {
             env::set_var("NSLOG_HOST", "127.0.0.1:50000");
         }
         assert_eq!(
-            (
-                log::LevelFilter::Warn,
-                ConnectionMode::Tcp("127.0.0.1".to_string(), 50000, true),
-                false
-            ),
+            Config {
+                filter: log::LevelFilter::Warn,
+                mode: ConnectionMode::Tcp("127.0.0.1".to_string(), 50000, true),
+                flush_messages: false
+            },
             parse_env()
         );
         unsafe {
@@ -185,7 +211,11 @@ mod tests {
             env::set_var("NSLOG_FLUSH", "1");
         }
         assert_eq!(
-            (log::LevelFilter::Warn, ConnectionMode::default(), true),
+            Config {
+                filter: log::LevelFilter::Warn,
+                mode: ConnectionMode::default(),
+                flush_messages: true
+            },
             parse_env()
         );
         unsafe {

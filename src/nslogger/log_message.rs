@@ -122,10 +122,14 @@ pub(crate) enum LogMessageType {
     Mark,
 }
 
+/// Fully constructed log message. Log messages may be built from one of the 3 constructor calls
+/// (`client_info`, `mark` or `log`) and are immutable, save for their sequence number, which is
+/// sent upon dispatching the message to the `LogWorker`.
 #[derive(Debug)]
 pub struct LogMessage(Vec<u8>);
 
 impl LogMessage {
+    /// Returns a client info message.
     pub fn client_info() -> LogMessage {
         let process_name = env::current_exe()
             .ok()
@@ -141,6 +145,7 @@ impl LogMessage {
             .freeze()
     }
 
+    /// Returns a mark with the optional `message`.
     pub fn mark(message: Option<&str>) -> LogMessage {
         let mark_message = message.map(|msg| msg.to_string()).unwrap_or_else(|| {
             let time_now = chrono::Utc::now();
@@ -152,15 +157,18 @@ impl LogMessage {
             .freeze()
     }
 
+    /// Returns a log message builder.
     pub fn log<'a>() -> LogMessageBuilder<'a> {
         LogMessageBuilder::new(LogMessageType::Log)
     }
 
+    /// Sets the message's unique sequence number, upon sending it to the log worker.
     pub fn set_sequence_number(&mut self, sequence_number: u32) {
         self.0[SEQUENCE_NB_OFFSET..(SEQUENCE_NB_OFFSET + 4)]
             .copy_from_slice(&sequence_number.to_be_bytes());
     }
 
+    /// Returns a reference to the message's inner byte array.
     pub fn bytes(&self) -> &[u8] {
         &self.0
     }
