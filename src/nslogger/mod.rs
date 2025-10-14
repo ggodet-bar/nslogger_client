@@ -195,7 +195,8 @@ impl Logger {
         message: &str,
     ) {
         let log_message = LogMessage::log(level)
-            .with_header(filename, line_number, method, domain)
+            .with_source_descriptor(filename, line_number, method)
+            .with_domain_opt(domain)
             .with_string(MessagePartKey::Message, message)
             .freeze();
         self.log_and_flush(log_message);
@@ -228,7 +229,8 @@ impl Logger {
         data: &[u8],
     ) {
         let log_message = LogMessage::log(level)
-            .with_header(filename, line_number, method, domain)
+            .with_source_descriptor(filename, line_number, method)
+            .with_domain_opt(domain)
             .with_binary_data(MessagePartKey::Message, data)
             .freeze();
         self.log_and_flush(log_message)
@@ -244,7 +246,8 @@ impl Logger {
         data: &[u8],
     ) {
         let log_message = LogMessage::log(level)
-            .with_header(filename, line_number, method, domain)
+            .with_source_descriptor(filename, line_number, method)
+            .with_domain_opt(domain)
             .with_image_data(MessagePartKey::Message, data)
             .freeze();
         self.log_and_flush(log_message);

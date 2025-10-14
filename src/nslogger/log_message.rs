@@ -294,17 +294,20 @@ impl<'a> LogMessageBuilder<'a> {
         self.with_string(key, string)
     }
 
+    pub fn with_domain_opt(self, domain: Option<Domain>) -> Self {
+        self.with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
+    }
+
     /// Current size of the serialized message, in bytes.
     fn size(&self) -> usize {
         self.0.iter().map(MessagePart::size).sum::<usize>() + 6
     }
 
-    pub fn with_header(
+    pub fn with_source_descriptor(
         self,
         filename: Option<&Path>,
         line_number: Option<u32>,
         method: Option<&'a str>,
-        domain: Option<Domain>,
     ) -> Self {
         self.with_string_opt(
             MessagePartKey::FileName,
@@ -312,7 +315,6 @@ impl<'a> LogMessageBuilder<'a> {
         )
         .with_int32_opt(MessagePartKey::LineNumber, filename.and(line_number))
         .with_string_opt(MessagePartKey::FunctionName, method)
-        .with_string_opt(MessagePartKey::Tag, domain.map(|d| d.to_string()))
     }
 
     pub fn with_binary_data(self, key: MessagePartKey, bytes: &'a [u8]) -> Self {
