@@ -1,6 +1,6 @@
 [package]
 name = "nslogger_client"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Guillaume Godet-Bar <guillaume.godetbar@gmail.com>"]
 edition = "2024"
 

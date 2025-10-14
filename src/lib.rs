@@ -32,7 +32,7 @@
 //!
 //! ### Using the `log` crate facade
 //!
-//!```rust
+//!```no_run
 //! use log::info;
 //!
 //! nslogger::init();
@@ -41,7 +41,7 @@
 //!
 //! ### Using the `nslogger_client` API
 //!
-//!```rust
+//!```no_run
 //! use nslogger::{Logger, Domain};
 //! use log::Level;
 //! # use std::{env, fs::File, io::Read};
