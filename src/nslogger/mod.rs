@@ -64,8 +64,8 @@ struct InnerSignal {
     condition: Condvar,
 }
 
-/// Parks threads until a condition - whose state is stored internally - is reached. Waiting threads
-/// a freed by calling `signal`.
+/// Shareable struct for parking threads until a condition - whose state is stored internally - is
+/// reached. Waiting threads are freed by calling `signal`.
 #[derive(Debug, Clone, Default)]
 pub struct Signal(Arc<InnerSignal>);
 
@@ -95,16 +95,39 @@ pub struct Logger {
     flush_messages: bool,
 }
 
-impl Logger {
-    pub fn new() -> Result<Self, Error> {
+impl TryFrom<Config> for Logger {
+    type Error = Error;
+
+    fn try_from(
+        Config {
+            filter,
+            mode,
+            flush_messages,
+        }: Config,
+    ) -> Result<Self, Self::Error> {
+        let logger = Logger {
+            filter,
+            flush_messages,
+            ..Default::default()
+        };
+        logger
+            .message_tx
+            .send(Message::SwitchConnection(mode))
+            .map_err(|_| Error::ChannelNotAvailable)?;
+        Ok(logger)
+    }
+}
+
+impl Default for Logger {
+    fn default() -> Self {
         if DEBUG_LOGGER {
             cfg_if! {
                 if #[cfg(test)] {
                     fn init_test_logger() {
                         START.call_once(|| {
-                            env_logger::init() ;
-                        }) ;
-                        log::info!("NSLogger client started") ;
+                            env_logger::init();
+                        });
+                        log::info!("NSLogger client started");
                     }
                 }
                 else {
@@ -116,29 +139,16 @@ impl Logger {
         }
         let (ready_signal, message_tx) = (*RUNTIME).get_signal_and_sender();
 
-        Ok(Logger {
+        Logger {
             message_tx,
             ready_signal,
             filter: log::LevelFilter::Warn,
             flush_messages: false,
-        })
+        }
     }
+}
 
-    pub fn with_config(
-        filter: log::LevelFilter,
-        mode: ConnectionMode,
-        flush_messages: bool,
-    ) -> Result<Self, Error> {
-        let mut logger = Logger::new()?;
-        logger.filter = filter;
-        logger.flush_messages = flush_messages;
-        logger
-            .message_tx
-            .send(Message::SwitchConnection(mode))
-            .map_err(|_| Error::ChannelNotAvailable)?;
-        Ok(logger)
-    }
-
+impl Logger {
     pub fn set_bonjour_service(&mut self, service: BonjourServiceType) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Bonjour(service);
         self.message_tx

@@ -20,7 +20,7 @@
 //! use nslogger::{Logger, Domain};
 //! use log::Level;
 //!
-//! let log = Logger::new().expect("a logger instance");
+//! let log = Logger::default();
 //! log.logm(Some(Domain::App), Level::Info, "starting application");
 //! log.log_mark(None); // will display a mark with no label in the NSLogger viewer
 //! log.logm(Some(Domain::App), Level::Info, "leaving application");
@@ -43,12 +43,8 @@ pub use nslogger::{BonjourServiceType, ConnectionMode, Domain, Logger};
 /// This should be called early in the execution of a Rust program, and the global logger may only
 /// be initialized once. Future initialization attempts will return an error.
 pub fn init() -> Result<(), log::SetLoggerError> {
-    let Config {
-        filter,
-        mode,
-        flush_messages,
-    } = Config::parse_env();
-    let logger = Logger::with_config(filter, mode, flush_messages).unwrap();
+    let config @ Config { filter, .. } = Config::parse_env();
+    let logger: Logger = config.try_into().unwrap();
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(filter);
     Ok(())
@@ -69,7 +65,7 @@ mod tests {
     fn logs_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let file_path = tempfile.into_temp_path();
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.set_log_file_path(file_path.to_str().unwrap())
             .expect("setting file path"); // File extension is constrained!!
@@ -170,7 +166,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn creates_logger_instance() {
-        let log = Logger::new().expect("logger instance");
+        let log = Logger::default();
         log.logm(Some(Domain::App), Level::Warn, "test");
         log.logm(Some(Domain::DB), Level::Error, "test1");
         log.logm(Some(Domain::DB), Level::Debug, "test2");
@@ -190,7 +186,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn connects_via_bonjour_with_ssl() {
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warn, "test1");
         log.logm(Some(Domain::App), Level::Warn, "test2");
@@ -201,7 +197,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_empty_domain() {
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.logm(
             Some(Domain::Custom("".to_string())),
@@ -217,7 +213,7 @@ mod tests {
     fn switches_from_file_to_bonjour() {
         let tempfile = NamedTempFile::new().expect("temp file");
 
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.set_log_file_path(tempfile.into_temp_path().to_str().unwrap())
             .expect("setting file path");
@@ -238,7 +234,7 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn switches_from_bonjour_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.logm(
             Some(Domain::App),
             Level::Warn,
@@ -259,7 +255,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn flushes_log_messages() {
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warn, "flush test");
         log.logm(Some(Domain::DB), Level::Error, "flush test1");
@@ -273,7 +269,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_mark() {
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warn, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
@@ -285,7 +281,7 @@ mod tests {
     #[serial]
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_empty_mark() {
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.logm(Some(Domain::App), Level::Warn, "before mark 1");
         log.logm(Some(Domain::DB), Level::Error, "before mark 2");
@@ -304,7 +300,7 @@ mod tests {
 
         file_handle.read_to_end(&mut buffer).unwrap();
 
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.log_image(None, None, None, None, Level::Warn, &buffer);
     }
@@ -316,7 +312,7 @@ mod tests {
         let bytes: [u8; 8] = [0x6c, 0x6f, 0x67, 0x20, 0x74, 0x65, 0x73, 0x74];
         // should read 'log test'
 
-        let mut log = Logger::new().expect("logger instance");
+        let mut log = Logger::default();
         log.set_message_flushing(true);
         log.log_data(None, None, None, None, Level::Warn, &bytes);
     }
