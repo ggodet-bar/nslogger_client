@@ -7,24 +7,18 @@ use std::{
 use cfg_if::cfg_if;
 use tokio::sync::mpsc;
 
-const DEBUG_LOGGER: bool = true & cfg!(test);
-
-#[cfg(test)]
-use std::sync::Once;
-
-#[cfg(test)]
-use env_logger;
-
-#[cfg(test)]
-static START: Once = Once::new();
-
-static RUNTIME: LazyLock<ReferenceCountedRuntime> =
-    LazyLock::new(|| ReferenceCountedRuntime::new().unwrap());
+/*
+ * Module declarations.
+ */
 
 mod log_message;
 mod log_worker;
 mod network_manager;
 mod reference_counted_runtime;
+
+/*
+ * Exports.
+ */
 
 #[cfg(test)]
 pub(crate) use self::log_message::{LogMessageType, SEQUENCE_NB_OFFSET};
@@ -36,23 +30,21 @@ pub(crate) use self::{
 pub use self::{log_worker::ConnectionMode, network_manager::BonjourServiceType};
 pub use crate::nslogger::log_message::Domain;
 
-#[derive(Debug, Clone, Default)]
-pub struct Signal(Arc<(Mutex<bool>, Condvar)>);
+/*
+ * Constants & global variables.
+ */
 
-impl Signal {
-    pub fn wait(&self) {
-        let mut ready = self.0 .0.lock().unwrap();
-        while !*ready {
-            ready = self.0 .1.wait(ready).unwrap();
-        }
-    }
+const DEBUG_LOGGER: bool = true & cfg!(test);
 
-    pub fn signal(&self) {
-        let mut ready = self.0 .0.lock().unwrap();
-        *ready = true;
-        self.0 .1.notify_all();
-    }
-}
+#[cfg(test)]
+static START: std::sync::Once = std::sync::Once::new();
+
+static RUNTIME: LazyLock<ReferenceCountedRuntime> =
+    LazyLock::new(|| ReferenceCountedRuntime::new().unwrap());
+
+/*
+ * Struct declarations.
+ */
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -64,6 +56,34 @@ pub enum Error {
     InvalidPath(String),
 }
 
+#[derive(Debug, Default)]
+struct InnerSignal {
+    state: Mutex<bool>,
+    condition: Condvar,
+}
+
+/// Parks threads until a condition - whose state is stored internally - is reached. Waiting threads
+/// a freed by calling `signal`.
+#[derive(Debug, Clone, Default)]
+pub struct Signal(Arc<InnerSignal>);
+
+impl Signal {
+    /// Parks calling threads unless the signal condition has been reached.
+    pub fn wait(&self) {
+        let mut ready = self.0.state.lock().unwrap();
+        while !*ready {
+            ready = self.0.condition.wait(ready).unwrap();
+        }
+    }
+
+    /// Sets the internal condition to `true`, and unparks all threads that were waiting on this
+    /// condition.
+    pub fn signal(&self) {
+        let mut ready = self.0.state.lock().unwrap();
+        *ready = true;
+        self.0.condition.notify_all();
+    }
+}
 pub struct Logger {
     ready_signal: Signal,
     message_tx: mpsc::UnboundedSender<Message>,
@@ -101,7 +121,7 @@ impl Logger {
         })
     }
 
-    pub fn with_options(
+    pub fn with_config(
         filter: log::LevelFilter,
         mode: ConnectionMode,
         flush_messages: bool,

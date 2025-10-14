@@ -96,7 +96,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
         mode,
         flush_messages,
     } = parse_env();
-    let logger = Logger::with_options(filter, mode, flush_messages).unwrap();
+    let logger = Logger::with_config(filter, mode, flush_messages).unwrap();
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(filter);
     Ok(())
