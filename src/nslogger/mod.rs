@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
-    sync::{Arc, Condvar, LazyLock, Mutex},
+    sync::{Arc, Condvar, Mutex, Once, OnceLock},
 };
 
 use cfg_if::cfg_if;
@@ -38,10 +38,10 @@ use crate::nslogger::{log_message::LogMessageBuilder, reference_counted_runtime:
  */
 
 #[cfg(test)]
-static START: std::sync::Once = std::sync::Once::new();
+static START: std::sync::Once = Once::new();
+static PRINT_ERR: std::sync::Once = Once::new();
 
-static RUNTIME: LazyLock<ReferenceCountedRuntime> =
-    LazyLock::new(|| ReferenceCountedRuntime::new().unwrap());
+static RUNTIME: OnceLock<LoggerState> = OnceLock::new();
 
 /*
  * Struct declarations.
@@ -59,6 +59,20 @@ pub enum Error {
     SSL(#[from] rustls::Error),
     #[error("invalid DNS name")]
     DNSName(#[from] rustls::pki_types::InvalidDnsNameError),
+}
+
+enum LoggerState {
+    Active(ReferenceCountedRuntime),
+    Disabled,
+}
+
+impl LoggerState {
+    pub fn get_handle(&self) -> Option<RuntimeHandle> {
+        match self {
+            Self::Active(runtime) => Some(runtime.get_handle()),
+            Self::Disabled => None,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -165,7 +179,7 @@ impl<'a> MessageBuilder<'a> {
 /// The default `Logger` will use the default connection mode (cf the crate root documentation).
 pub struct Logger {
     /// Handle to the logger runtime.
-    runtime_handle: RuntimeHandle,
+    runtime_handle: Option<RuntimeHandle>,
     /// Maximum log level.
     filter: log::LevelFilter,
     /// Wait for each message to be sent to the desktop viewer (includes connecting to the viewer).
@@ -187,7 +201,9 @@ impl TryFrom<Config> for Logger {
             flush_messages,
             ..Default::default()
         };
-        logger.runtime_handle.switch_connection_mode(mode)?;
+        if let Some(handle) = logger.runtime_handle.as_ref() {
+            handle.switch_connection_mode(mode)?;
+        }
         Ok(logger)
     }
 }
@@ -209,8 +225,16 @@ impl Default for Logger {
         }
 
         init_test_logger();
+        let logger_state = RUNTIME.get_or_init(|| match ReferenceCountedRuntime::new() {
+            Ok(runtime) => LoggerState::Active(runtime),
+            Err(_err) => {
+                eprintln!("failed to initialize the logger runtime: {_err}");
+                LoggerState::Disabled
+            }
+        });
+
         Logger {
-            runtime_handle: (*RUNTIME).get_handle(),
+            runtime_handle: logger_state.get_handle(),
             filter: log::LevelFilter::Warn,
             flush_messages: false,
         }
@@ -222,8 +246,9 @@ impl Logger {
     /// to the desktop application.
     pub fn set_bonjour_service_mode(&mut self, service: BonjourServiceType) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Bonjour(service);
-        self.runtime_handle
-            .switch_connection_mode(connection_mode)?;
+        if let Some(handle) = self.runtime_handle.as_ref() {
+            handle.switch_connection_mode(connection_mode)?;
+        }
         Ok(())
     }
 
@@ -236,8 +261,9 @@ impl Logger {
         use_ssl: bool,
     ) -> Result<(), Error> {
         let connection_mode = ConnectionMode::Tcp(host_name.to_string(), host_port, use_ssl);
-        self.runtime_handle
-            .switch_connection_mode(connection_mode)?;
+        if let Some(handle) = self.runtime_handle.as_ref() {
+            handle.switch_connection_mode(connection_mode)?;
+        }
         Ok(())
     }
 
@@ -245,8 +271,9 @@ impl Logger {
     /// any previous connection to the desktop application.
     pub fn set_file_mode(&self, file_path: PathBuf) -> Result<(), Error> {
         let connection_mode = ConnectionMode::File(file_path);
-        self.runtime_handle
-            .switch_connection_mode(connection_mode)?;
+        if let Some(handle) = self.runtime_handle.as_ref() {
+            handle.switch_connection_mode(connection_mode)?;
+        }
         Ok(())
     }
 
@@ -259,8 +286,9 @@ impl Logger {
     fn log_and_flush(&self, log_message: LogMessage) -> Result<(), Error> {
         #[cfg(test)]
         log::info!("entering log");
-        self.runtime_handle
-            .send_and_flush(log_message, self.flush_messages)?;
+        if let Some(handle) = self.runtime_handle.as_ref() {
+            handle.send_and_flush(log_message, self.flush_messages)?;
+        }
         #[cfg(test)]
         log::info!("Exiting log");
         Ok(())
@@ -306,7 +334,9 @@ impl log::Log for Logger {
             )
             .message(format!("{}", record.args()))
         {
-            log::error!("logger error: {_err}")
+            PRINT_ERR.call_once(|| {
+                eprintln!("logger error: {_err}");
+            });
         }
     }
 

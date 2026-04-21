@@ -62,19 +62,26 @@
 //! At the moment there are no plans to add support for the following NSLogger features:
 //!
 //!  - message blocks
-//!  - client disconnects
 
 mod nslogger;
 
 pub use nslogger::{BonjourServiceType, Config, ConnectionMode, Domain, Logger, MessageBuilder};
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("logger init was called twice")]
+    Init(#[from] log::SetLoggerError),
+    #[error("logger configuration error")]
+    Config(#[from] nslogger::Error),
+}
+
 /// Initializes the global logger with a Logger instance.
 ///
 /// This should be called early in the execution of a Rust program, and the global logger may only
 /// be initialized once. Future initialization attempts will return an error.
-pub fn init() -> Result<(), log::SetLoggerError> {
+pub fn init() -> Result<(), Error> {
     let config @ Config { filter, .. } = Config::parse_env();
-    let logger: Logger = config.try_into().unwrap();
+    let logger: Logger = config.try_into()?;
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(filter);
     Ok(())

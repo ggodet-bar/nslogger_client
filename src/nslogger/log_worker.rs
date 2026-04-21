@@ -318,8 +318,6 @@ impl LogWorker {
     /// Write outstanding messages to the stream
     async fn write_messages_to_stream(&mut self) -> Result<(), Error> {
         #[cfg(test)]
-        use crate::nslogger::log_message::SEQUENCE_NB_OFFSET;
-        #[cfg(test)]
         log::info!(
             "process_log_queue: {} queued messages",
             self.log_messages.len()
@@ -327,15 +325,9 @@ impl LogWorker {
 
         while let Some((message, signal)) = self.log_messages.pop_front() {
             #[cfg(test)]
-            log::info!(
-                "processing message {}",
-                &u32::from_be_bytes(
-                    message.bytes()[SEQUENCE_NB_OFFSET..SEQUENCE_NB_OFFSET + 4]
-                        .try_into()
-                        .unwrap()
-                )
-            );
+            log::info!("processing message");
 
+            // At this point the write stream is guaranteed to be connected.
             let tcp_stream = self.write_stream.as_mut().unwrap();
             #[cfg(test)]
             log::info!(
