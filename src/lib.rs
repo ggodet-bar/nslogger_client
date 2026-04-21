@@ -116,10 +116,12 @@ mod tests {
         let first_msg = "message logged to file";
         log.log(Level::Warn)
             .with_domain(Domain::App)
-            .message(first_msg);
+            .message(first_msg)
+            .expect("logs message");
         log.log(Level::Warn)
             .with_domain(Domain::DB)
-            .message("other message logged to file");
+            .message("other message logged to file")
+            .expect("logs message");
         let mut file = File::open(file_path).expect("file should exist");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).expect("file read");
@@ -212,17 +214,23 @@ mod tests {
         let log = Logger::default();
         log.log(Level::Warn)
             .with_domain(Domain::App)
-            .message("warning msg");
+            .message("warning msg")
+            .expect("logs message");
         log.log(Level::Error)
             .with_domain(Domain::DB)
-            .message("error msg");
+            .message("error msg")
+            .expect("logs message");
         log.log(Level::Debug)
             .with_domain(Domain::DB)
-            .message("debug msg");
+            .message("debug msg")
+            .expect("logs message");
         log.log(Level::Debug)
             .with_domain(Domain::Custom("MyCustomDomain".to_string()))
-            .message("Tag test");
-        log.log(Level::Info).message("Just a simple message");
+            .message("Tag test")
+            .expect("logs message");
+        log.log(Level::Info)
+            .message("Just a simple message")
+            .expect("logs message");
         std::thread::sleep(Duration::from_secs(2));
     }
 
@@ -233,7 +241,8 @@ mod tests {
         let log: Logger = Config::default().try_into().unwrap();
         log.log(Level::Warn)
             .with_domain(Domain::Custom("".to_string()))
-            .message("no domain should appear");
+            .message("no domain should appear")
+            .expect("logs message");
         std::thread::sleep(Duration::from_secs(2));
     }
 
@@ -249,13 +258,17 @@ mod tests {
         )
         .try_into()
         .expect("a valid logger");
-        log.log(Level::Warn).message("message logged to file");
+        log.log(Level::Warn)
+            .message("message logged to file")
+            .expect("logs message");
         log.set_bonjour_service_mode(BonjourServiceType::Default(false))
             .expect("setting bonjour");
-        log.log(Level::Warn).message(format!(
-            "previous message should have been logged to file {}",
-            tempfile.path().as_os_str().to_string_lossy()
-        ));
+        log.log(Level::Warn)
+            .message(format!(
+                "previous message should have been logged to file {}",
+                tempfile.path().as_os_str().to_string_lossy()
+            ))
+            .expect("logs message");
     }
 
     #[test]
@@ -264,14 +277,17 @@ mod tests {
     fn switches_from_bonjour_to_file() {
         let tempfile = NamedTempFile::new().expect("temp file");
         let log: Logger = Config::default().try_into().unwrap();
-        log.log(Level::Warn).message(format!(
-            "message first logged to Bonjour, next one should appear in {}",
-            tempfile.path().as_os_str().to_string_lossy()
-        ));
+        log.log(Level::Warn)
+            .message(format!(
+                "message first logged to Bonjour, next one should appear in {}",
+                tempfile.path().as_os_str().to_string_lossy()
+            ))
+            .expect("logs message");
         log.set_file_mode(tempfile.path().to_path_buf())
             .expect("setting file path"); // File extension is constrained!!
         log.log(Level::Warn)
-            .message("message shifted from Bonjour to file");
+            .message("message shifted from Bonjour to file")
+            .expect("logs message");
     }
 
     #[test]
@@ -279,9 +295,13 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_mark() {
         let log: Logger = Config::default().try_into().unwrap();
-        log.log(Level::Error).message("before mark");
-        log.log_mark(Some("this is a mark"));
-        log.log(Level::Error).message("after mark");
+        log.log(Level::Error)
+            .message("before mark")
+            .expect("logs message");
+        log.log_mark(Some("this is a mark")).expect("prints mark");
+        log.log(Level::Error)
+            .message("after mark")
+            .expect("logs message");
     }
 
     #[test]
@@ -289,9 +309,13 @@ mod tests {
     #[cfg_attr(not(feature = "desktop-integration"), ignore)]
     fn logs_empty_mark() {
         let log: Logger = Config::default().try_into().unwrap();
-        log.log(Level::Error).message("before empty mark");
-        log.log_mark(None);
-        log.log(Level::Error).message("after empty mark");
+        log.log(Level::Error)
+            .message("before empty mark")
+            .expect("logs message");
+        log.log_mark(None).expect("prints mark");
+        log.log(Level::Error)
+            .message("after empty mark")
+            .expect("logs message");
     }
 
     #[test]
@@ -306,7 +330,7 @@ mod tests {
         file_handle.read_to_end(&mut buffer).unwrap();
 
         let log: Logger = Config::default().try_into().unwrap();
-        log.log(Level::Warn).image(&buffer);
+        log.log(Level::Warn).image(&buffer).expect("logs message");
     }
 
     #[test]
@@ -317,6 +341,6 @@ mod tests {
         // should read 'log test'
 
         let log: Logger = Config::default().try_into().unwrap();
-        log.log(Level::Warn).data(&bytes);
+        log.log(Level::Warn).data(&bytes).expect("logs message");
     }
 }

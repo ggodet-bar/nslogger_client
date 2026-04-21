@@ -26,21 +26,26 @@ impl RuntimeHandle {
             .map_err(|_| Error::ChannelNotAvailable)
     }
 
-    pub fn send_and_flush(&self, log_message: LogMessage, flush_message: bool) {
+    pub fn send_and_flush(
+        &self,
+        log_message: LogMessage,
+        flush_message: bool,
+    ) -> Result<(), Error> {
         self.ready.wait();
         let flush_signal = flush_message.then(Signal::default);
         self.message_tx
             .send(Message::AddLog(log_message, flush_signal.clone()))
-            .unwrap();
+            .map_err(|_| Error::ChannelNotAvailable)?;
 
         let Some(signal) = flush_signal else {
-            return;
+            return Ok(());
         };
         #[cfg(test)]
         log::info!("waiting for message flush");
         signal.wait();
         #[cfg(test)]
         log::info!("message flush ack received");
+        Ok(())
     }
 }
 
@@ -53,7 +58,9 @@ impl Drop for InnerRcRuntime {
     fn drop(&mut self) {
         #[cfg(test)]
         log::info!("shutting down runtime");
-        self.runtime.take().unwrap().shutdown_background();
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+        }
     }
 }
 

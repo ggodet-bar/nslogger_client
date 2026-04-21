@@ -6,7 +6,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::nslogger::Message;
+use crate::nslogger::{Error, Message};
 
 const DEFAULT_BONJOUR_SERVICE: &str = "_nslogger._tcp.";
 const DEFAULT_BONJOUR_SERVICE_SSL: &str = "_nslogger-ssl._tcp.";
@@ -51,7 +51,7 @@ impl NetworkManager {
         }
     }
 
-    pub async fn run(&mut self) -> io::Result<()> {
+    pub async fn run(&mut self) -> Result<(), Error> {
         #[cfg(test)]
         log::info!("starting network manager");
 
@@ -66,7 +66,7 @@ impl NetworkManager {
                         log::info!("found Bonjour service {_bonjour_service_name}");
                         self.message_tx
                             .send(Message::ConnectToBonjourService(host, use_ssl))
-                            .unwrap();
+                            .map_err(|_| Error::ChannelNotAvailable)?;
                         is_connected = true;
                     }
                     _ => {

@@ -133,30 +133,30 @@ impl<'a> MessageBuilder<'a> {
     }
 
     /// Finalizes the log message with an `image` bytes part and dispatches it to the log worker.
-    pub fn image(self, image: &'a [u8]) {
+    pub fn image(self, image: &'a [u8]) -> Result<(), Error> {
         let log_message = self
             .0
             .with_image_data(MessagePartKey::Message, image)
             .freeze();
-        self.1.log_and_flush(log_message);
+        self.1.log_and_flush(log_message)
     }
 
     /// Finalizes the log message with a `data` part data and dispatches it to the log worker.
-    pub fn data(self, data: &'a [u8]) {
+    pub fn data(self, data: &'a [u8]) -> Result<(), Error> {
         let log_message = self
             .0
             .with_binary_data(MessagePartKey::Message, data)
             .freeze();
-        self.1.log_and_flush(log_message);
+        self.1.log_and_flush(log_message)
     }
 
     /// Finalizes the log message with a string-like `message` and dispatches it to the log worker.
-    pub fn message(self, message: impl Into<Cow<'a, str>>) {
+    pub fn message(self, message: impl Into<Cow<'a, str>>) -> Result<(), Error> {
         let log_message = self
             .0
             .with_string(MessagePartKey::Message, message)
             .freeze();
-        self.1.log_and_flush(log_message);
+        self.1.log_and_flush(log_message)
     }
 }
 
@@ -256,13 +256,14 @@ impl Logger {
         self.flush_messages = flush_each_message;
     }
 
-    fn log_and_flush(&self, log_message: LogMessage) {
+    fn log_and_flush(&self, log_message: LogMessage) -> Result<(), Error> {
         #[cfg(test)]
         log::info!("entering log");
         self.runtime_handle
-            .send_and_flush(log_message, self.flush_messages);
+            .send_and_flush(log_message, self.flush_messages)?;
         #[cfg(test)]
         log::info!("Exiting log");
+        Ok(())
     }
 
     /// Starts building a log message with severity `level`.
@@ -277,7 +278,7 @@ impl Logger {
     ///
     /// Marks are important points that you can jump to directly in the desktop viewer. Message is
     /// optional, if null or empty it will be replaced with the current date / time
-    pub fn log_mark(&self, message: Option<&str>) {
+    pub fn log_mark(&self, message: Option<&str>) -> Result<(), Error> {
         let log_message = LogMessage::mark(message);
         self.log_and_flush(log_message)
     }
@@ -296,13 +297,17 @@ impl log::Log for Logger {
             return;
         }
 
-        self.log(record.level())
+        if let Err(_err) = self
+            .log(record.level())
             .with_source_descriptor(
                 record.file().map(Path::new),
                 record.line(),
                 Some(record.target()),
             )
-            .message(format!("{}", record.args()));
+            .message(format!("{}", record.args()))
+        {
+            log::error!("logger error: {_err}")
+        }
     }
 
     fn flush(&self) {}
