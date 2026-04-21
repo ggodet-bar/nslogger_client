@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tokio::{
     runtime::{Builder, Runtime},
@@ -57,7 +57,7 @@ impl Drop for InnerRcRuntime {
     }
 }
 
-pub struct ReferenceCountedRuntime(Signal, Arc<Mutex<InnerRcRuntime>>);
+pub struct ReferenceCountedRuntime(Signal, Arc<InnerRcRuntime>);
 
 impl ReferenceCountedRuntime {
     pub fn new() -> Result<Self, Error> {
@@ -102,17 +102,17 @@ impl ReferenceCountedRuntime {
          */
         Ok(Self(
             ready_signal,
-            Arc::new(Mutex::new(InnerRcRuntime {
+            Arc::new(InnerRcRuntime {
                 runtime: Some(runtime),
                 message_tx,
-            })),
+            }),
         ))
     }
 
     pub fn get_handle(&self) -> RuntimeHandle {
         RuntimeHandle {
             ready: self.0.clone(),
-            message_tx: self.1.lock().unwrap().message_tx.clone(),
+            message_tx: self.1.message_tx.clone(),
         }
     }
 }
