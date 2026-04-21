@@ -6,7 +6,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::nslogger::{Message, DEBUG_LOGGER};
+use crate::nslogger::Message;
 
 const DEFAULT_BONJOUR_SERVICE: &str = "_nslogger._tcp.";
 const DEFAULT_BONJOUR_SERVICE_SSL: &str = "_nslogger-ssl._tcp.";
@@ -44,35 +44,31 @@ impl NetworkManager {
     }
 
     pub async fn run(&mut self) -> io::Result<()> {
-        if DEBUG_LOGGER {
-            log::info!("starting network manager");
-        }
+        #[cfg(test)]
+        log::info!("starting network manager");
 
         while let Some(service_type) = &self.command_rx.recv().await {
-            if DEBUG_LOGGER {
-                log::info!("network manager received message");
-            }
+            #[cfg(test)]
+            log::info!("network manager received message");
             let mut is_connected = false;
             while !is_connected {
                 match self.setup_bonjour(service_type).await? {
                     BonjourServiceStatus::ServiceFound(
-                        bonjour_service_name,
+                        _bonjour_service_name,
                         host,
                         port,
                         use_ssl,
                     ) => {
-                        if DEBUG_LOGGER {
-                            log::info!("found Bonjour service {bonjour_service_name}");
-                        }
+                        #[cfg(test)]
+                        log::info!("found Bonjour service {_bonjour_service_name}");
                         self.message_tx
                             .send(Message::ConnectToBonjourService(host, port, use_ssl))
                             .unwrap();
                         is_connected = true;
                     }
                     _ => {
-                        if DEBUG_LOGGER {
-                            log::info!("couldn't resolve Bonjour. Will retry in a few seconds");
-                        }
+                        #[cfg(test)]
+                        log::info!("couldn't resolve Bonjour. Will retry in a few seconds");
 
                         sleep(RETRY_TIMEOUT).await
                     }
@@ -80,9 +76,8 @@ impl NetworkManager {
             }
         }
 
-        if DEBUG_LOGGER {
-            log::info!("exiting network manager");
-        }
+        #[cfg(test)]
+        log::info!("exiting network manager");
         Ok(())
     }
 
@@ -90,9 +85,8 @@ impl NetworkManager {
         &mut self,
         service_type: &BonjourServiceType,
     ) -> io::Result<BonjourServiceStatus> {
-        if DEBUG_LOGGER {
-            log::info!("setting up Bonjour");
-        }
+        #[cfg(test)]
+        log::info!("setting up Bonjour");
         let (service_name, use_ssl) = match service_type {
             BonjourServiceType::Custom(name, use_ssl) => (name.as_str(), *use_ssl),
             BonjourServiceType::Default(use_ssl) if *use_ssl => (DEFAULT_BONJOUR_SERVICE_SSL, true),
@@ -102,24 +96,21 @@ impl NetworkManager {
         let browse_result = match timeout(Duration::from_secs(5), service_browser.next()).await {
             Ok(Some(Ok(browse_result))) => browse_result,
             Err(_) => {
-                if DEBUG_LOGGER {
-                    log::warn!("Bonjour discovery timed out")
-                }
+                #[cfg(test)]
+                log::warn!("Bonjour discovery timed out");
                 return Ok(BonjourServiceStatus::TimedOut);
             }
             _ => return Ok(BonjourServiceStatus::Unresolved),
         };
-        if DEBUG_LOGGER {
-            log::info!("browse result: {:?}", browse_result);
-        }
+        #[cfg(test)]
+        log::info!("browse result: {:?}", browse_result);
         let bonjour_service_name = browse_result.service_name.to_string();
         let resolve_details = browse_result.resolve().next().await.transpose()?;
         let Some(resolve_details) = resolve_details else {
             return Ok(BonjourServiceStatus::Unresolved);
         };
-        if DEBUG_LOGGER {
-            log::info!("service resolution details: {:?}", resolve_details);
-        }
+        #[cfg(test)]
+        log::info!("service resolution details: {:?}", resolve_details);
         let Some(host_addr) = format!("{}:{}", resolve_details.host_target, resolve_details.port)
             .to_socket_addrs()?
             .next()
@@ -127,9 +118,8 @@ impl NetworkManager {
             return Ok(BonjourServiceStatus::Unresolved);
         };
         let ip_address = host_addr.ip().to_string();
-        if DEBUG_LOGGER {
-            log::info!("Bonjour host details {host_addr:?}");
-        }
+        #[cfg(test)]
+        log::info!("Bonjour host details {host_addr:?}");
 
         Ok(BonjourServiceStatus::ServiceFound(
             bonjour_service_name,

@@ -6,7 +6,7 @@ use tokio::{
 };
 
 use crate::{
-    nslogger::{network_manager, Error, LogMessage, LogWorker, Message, Signal, DEBUG_LOGGER},
+    nslogger::{network_manager, Error, LogMessage, LogWorker, Message, Signal},
     ConnectionMode,
 };
 
@@ -36,13 +36,11 @@ impl RuntimeHandle {
         let Some(signal) = flush_signal else {
             return;
         };
-        if DEBUG_LOGGER {
-            log::info!("waiting for message flush");
-        }
+        #[cfg(test)]
+        log::info!("waiting for message flush");
         signal.wait();
-        if DEBUG_LOGGER {
-            log::info!("message flush ack received");
-        }
+        #[cfg(test)]
+        log::info!("message flush ack received");
     }
 }
 
@@ -53,9 +51,8 @@ struct InnerRcRuntime {
 
 impl Drop for InnerRcRuntime {
     fn drop(&mut self) {
-        if DEBUG_LOGGER {
-            log::info!("shutting down runtime");
-        }
+        #[cfg(test)]
+        log::info!("shutting down runtime");
         let _ = self.message_tx.downgrade();
         self.runtime.take().unwrap().shutdown_background();
     }
@@ -65,9 +62,8 @@ pub struct ReferenceCountedRuntime(Signal, Arc<Mutex<InnerRcRuntime>>);
 
 impl ReferenceCountedRuntime {
     pub fn new() -> Result<Self, Error> {
-        if DEBUG_LOGGER {
-            log::info!("initializing logger runtime");
-        }
+        #[cfg(test)]
+        log::info!("initializing logger runtime");
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let ready_signal = Signal::default();

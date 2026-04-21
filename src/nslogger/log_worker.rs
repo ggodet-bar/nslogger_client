@@ -14,10 +14,7 @@ use openssl::{
 use tokio::sync::mpsc;
 
 use crate::nslogger::{
-    log_message::{LogMessage, SEQUENCE_NB_OFFSET},
-    network_manager,
-    network_manager::BonjourServiceType,
-    Error, Signal, DEBUG_LOGGER,
+    log_message::LogMessage, network_manager, network_manager::BonjourServiceType, Error, Signal,
 };
 
 #[derive(Debug)]
@@ -108,22 +105,18 @@ impl LogWorker {
     }
 
     pub async fn run(&mut self) -> Result<(), Error> {
-        if DEBUG_LOGGER {
-            log::info!("logging thread starting up");
-        }
+        #[cfg(test)]
+        log::info!("logging thread starting up");
         /*
          * Initial setup according to current parameters.
          */
         self.setup_connection()?;
-        if DEBUG_LOGGER {
-            log::info!("starting log event loop");
-        }
-
+        #[cfg(test)]
+        log::info!("starting log event loop");
         self.run_loop().await?;
+        #[cfg(test)]
+        log::info!("stopped log event loop");
 
-        if DEBUG_LOGGER {
-            log::info!("stopped log event loop");
-        }
         Ok(())
     }
 
@@ -135,10 +128,8 @@ impl LogWorker {
     }
 
     fn handle_message(&mut self, message: Message) -> Result<(), Error> {
-        if DEBUG_LOGGER {
-            log::info!("received message");
-        }
-
+        #[cfg(test)]
+        log::info!("received message");
         match message {
             Message::AddLog(mut message, signal) => {
                 /*
@@ -147,10 +138,8 @@ impl LogWorker {
                  */
                 let sequence_number = self.generate_sequence_nb();
                 message.set_sequence_number(sequence_number);
-                if DEBUG_LOGGER {
-                    log::info!("adding log {} to the queue", sequence_number);
-                }
-
+                #[cfg(test)]
+                log::info!("adding log {} to the queue", sequence_number);
                 self.log_messages.push_back((message, signal));
                 self.process_log_queue()?;
             }
@@ -158,7 +147,8 @@ impl LogWorker {
                 self.change_options(new_mode)?;
             }
             Message::ConnectToBonjourService(host, port, use_ssl) => {
-                let stream = self.connect_to_remote(&host, port, use_ssl)?;
+                let stream = Self::connect_to_remote(&host, port, use_ssl)?;
+                self.connection_state = ConnectionState::Connected;
                 self.write_stream = Some(stream);
                 self.process_log_queue()?;
             }
@@ -182,19 +172,16 @@ impl LogWorker {
     }
 
     fn push_client_info_to_front_of_queue(&mut self) {
-        if DEBUG_LOGGER {
-            log::info!("pushing client info to front of queue");
-        }
-
+        #[cfg(test)]
+        log::info!("pushing client info to front of queue");
         self.log_messages
             .push_front((LogMessage::client_info(), None));
         self.connection_state = ConnectionState::Ready;
     }
 
     pub fn change_options(&mut self, mode: ConnectionMode) -> Result<(), Error> {
-        if DEBUG_LOGGER {
-            log::info!("changing options: {:?}. Closing/restarting.", mode);
-        }
+        #[cfg(test)]
+        log::info!("changing options: {:?}. Closing/restarting.", mode);
         if self.write_stream.is_some() {
             self.disconnect();
         }
@@ -214,20 +201,18 @@ impl LogWorker {
     }
 
     pub fn connect_to_remote(
-        &mut self,
         host: &str,
         port: u16,
         use_ssl: bool,
     ) -> Result<WriteStreamWrapper, Error> {
         let connect_string = format!("{}:{}", host, port);
-        if DEBUG_LOGGER {
-            log::info!("connecting to {connect_string}");
-        }
+        #[cfg(test)]
+        log::info!("connecting to {connect_string}");
         let stream = TcpStream::connect(connect_string)?;
         let stream = if use_ssl {
-            if DEBUG_LOGGER {
-                log::info!("activating SSL connection");
-            }
+            #[cfg(test)]
+            log::info!("activating SSL connection");
+
             let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls()).unwrap();
 
             ssl_connector_builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
@@ -236,23 +221,19 @@ impl LogWorker {
 
             let connector = ssl_connector_builder.build();
             let stream = connector.connect("localhost", stream).unwrap();
-            if DEBUG_LOGGER {
-                log::info!("opened SSL stream");
-            }
+            #[cfg(test)]
+            log::info!("opened SSL stream");
             WriteStreamWrapper::Ssl(stream)
         } else {
             WriteStreamWrapper::Tcp(stream)
         };
 
-        self.connection_state = ConnectionState::Connected;
-
         Ok(stream)
     }
 
     pub fn disconnect(&mut self) {
-        if DEBUG_LOGGER {
-            log::info!("disconnect_from_remote()");
-        }
+        #[cfg(test)]
+        log::info!("disconnect_from_remote()");
 
         self.connection_state = ConnectionState::Disconnected;
         self.write_stream = None;
@@ -260,21 +241,23 @@ impl LogWorker {
     }
 
     pub fn setup_connection(&mut self) -> Result<(), Error> {
-        match self.connection_mode.clone() {
+        match &self.connection_mode {
             ConnectionMode::File(path) => {
-                let stream = self.create_buffer_write_stream(&path)?;
+                let stream = Self::create_buffer_write_stream(&path)?;
                 self.write_stream = Some(stream);
+                self.connection_state = ConnectionState::Connected;
             }
             ConnectionMode::Tcp(host, port, use_ssl)
                 if self.connection_state == ConnectionState::Disconnected =>
             {
-                let stream = self.connect_to_remote(&host, port, use_ssl)?;
+                let stream = Self::connect_to_remote(&host, *port, *use_ssl)?;
                 self.write_stream = Some(stream);
+                self.connection_state = ConnectionState::Connected;
             }
             ConnectionMode::Bonjour(BonjourServiceType::Default(use_ssl))
                 if self.connection_state == ConnectionState::Disconnected =>
             {
-                self.browse_bonjour_services(use_ssl)?;
+                self.browse_bonjour_services(*use_ssl)?;
             }
             _ => {
                 // Nothing to do
@@ -288,26 +271,22 @@ impl LogWorker {
             return Ok(());
         }
 
-        if DEBUG_LOGGER {
-            log::info!("try_reconnecting");
-        }
-
+        #[cfg(test)]
+        log::info!("try_reconnecting");
         self.setup_connection()?;
         Ok(())
     }
 
-    pub fn create_buffer_write_stream(&mut self, path: &Path) -> Result<WriteStreamWrapper, Error> {
-        if DEBUG_LOGGER {
-            log::info!("creating file buffer stream to {path:?}");
-        }
-
+    pub fn create_buffer_write_stream(path: &Path) -> Result<WriteStreamWrapper, Error> {
+        #[cfg(test)]
+        log::info!("creating file buffer stream to {path:?}");
         let file_writer = BufWriter::new(File::create(path)?);
-        self.connection_state = ConnectionState::Connected;
         Ok(WriteStreamWrapper::File(file_writer))
     }
 
     pub fn close_buffer_write_stream(&mut self) -> Result<(), Error> {
-        if DEBUG_LOGGER && self.write_stream.is_some() {
+        #[cfg(test)]
+        if self.write_stream.is_some() {
             log::info!("closing buffer stream");
         }
 
@@ -320,38 +299,36 @@ impl LogWorker {
 
     /// Write outstanding messages to the stream
     fn write_messages_to_stream(&mut self) -> Result<(), Error> {
-        if DEBUG_LOGGER {
-            log::info!(
-                "process_log_queue: {} queued messages",
-                self.log_messages.len()
-            );
-        }
+        #[cfg(test)]
+        use crate::nslogger::log_message::SEQUENCE_NB_OFFSET;
+        #[cfg(test)]
+        log::info!(
+            "process_log_queue: {} queued messages",
+            self.log_messages.len()
+        );
 
         while let Some((message, signal)) = self.log_messages.pop_front() {
-            if DEBUG_LOGGER {
-                log::info!(
-                    "processing message {}",
-                    &u32::from_be_bytes(
-                        message.bytes()[SEQUENCE_NB_OFFSET..SEQUENCE_NB_OFFSET + 4]
-                            .try_into()
-                            .unwrap()
-                    )
-                );
-            }
+            #[cfg(test)]
+            log::info!(
+                "processing message {}",
+                &u32::from_be_bytes(
+                    message.bytes()[SEQUENCE_NB_OFFSET..SEQUENCE_NB_OFFSET + 4]
+                        .try_into()
+                        .unwrap()
+                )
+            );
 
             let tcp_stream = self.write_stream.as_mut().unwrap();
-            if DEBUG_LOGGER {
-                log::info!(
-                    "writing to {:?} (len: {})",
-                    tcp_stream,
-                    message.bytes().len()
-                );
-            }
-            if let Err(err) = tcp_stream.write_all(message.bytes()) {
+            #[cfg(test)]
+            log::info!(
+                "writing to {:?} (len: {})",
+                tcp_stream,
+                message.bytes().len()
+            );
+            if let Err(_err) = tcp_stream.write_all(message.bytes()) {
                 self.log_messages.push_front((message, signal));
-                if DEBUG_LOGGER {
-                    log::warn!("write to stream failed: {err:?}");
-                }
+                #[cfg(test)]
+                log::warn!("write to stream failed: {_err:?}");
 
                 self.disconnect();
                 self.try_reconnecting()?;
@@ -368,15 +345,13 @@ impl LogWorker {
 
     pub fn process_log_queue(&mut self) -> Result<(), Error> {
         if self.log_messages.is_empty() {
-            if DEBUG_LOGGER {
-                log::info!("process_log_queue empty");
-            }
+            #[cfg(test)]
+            log::info!("process_log_queue empty");
             return Ok(());
         }
 
-        if DEBUG_LOGGER {
-            log::info!("process_log_queue");
-        }
+        #[cfg(test)]
+        log::info!("process_log_queue");
 
         if self.connection_state == ConnectionState::Disconnected {
             self.setup_connection()?;
@@ -388,18 +363,16 @@ impl LogWorker {
             self.write_messages_to_stream()?;
         }
 
-        if DEBUG_LOGGER {
-            log::info!("finished processing log queue",);
-        }
+        #[cfg(test)]
+        log::info!("finished processing log queue",);
         Ok(())
     }
 }
 
 impl Drop for LogWorker {
     fn drop(&mut self) {
-        if DEBUG_LOGGER {
-            log::info!("calling drop for log worker");
-        }
+        #[cfg(test)]
+        log::info!("calling drop for log worker");
         if let Some(mut stream) = self.write_stream.take() {
             stream.flush().unwrap();
         }

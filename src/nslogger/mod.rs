@@ -37,8 +37,6 @@ use crate::nslogger::{log_message::LogMessageBuilder, reference_counted_runtime:
  * Constants & global variables.
  */
 
-const DEBUG_LOGGER: bool = true & cfg!(test);
-
 #[cfg(test)]
 static START: std::sync::Once = std::sync::Once::new();
 
@@ -192,23 +190,21 @@ impl TryFrom<Config> for Logger {
 
 impl Default for Logger {
     fn default() -> Self {
-        if DEBUG_LOGGER {
-            cfg_if! {
-                if #[cfg(test)] {
-                    fn init_test_logger() {
-                        START.call_once(|| {
-                            env_logger::init();
-                        });
-                        log::info!("NSLogger client started");
-                    }
-                }
-                else {
-                    fn init_test_logger() {}
+        cfg_if! {
+            if #[cfg(test)] {
+                fn init_test_logger() {
+                    START.call_once(|| {
+                        env_logger::init();
+                    });
+                    log::info!("NSLogger client started");
                 }
             }
-
-            init_test_logger();
+            else {
+                fn init_test_logger() {}
+            }
         }
+
+        init_test_logger();
         Logger {
             runtime_handle: (*RUNTIME).get_handle(),
             filter: log::LevelFilter::Warn,
@@ -257,14 +253,12 @@ impl Logger {
     }
 
     fn log_and_flush(&self, log_message: LogMessage) {
-        if DEBUG_LOGGER {
-            log::info!("entering log");
-        }
+        #[cfg(test)]
+        log::info!("entering log");
         self.runtime_handle
             .send_and_flush(log_message, self.flush_messages);
-        if DEBUG_LOGGER {
-            log::info!("Exiting log");
-        }
+        #[cfg(test)]
+        log::info!("Exiting log");
     }
 
     /// Starts building a log message with severity `level`.
