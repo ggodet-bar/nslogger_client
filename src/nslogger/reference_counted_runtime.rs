@@ -60,6 +60,8 @@ impl Drop for InnerRcRuntime {
 pub struct ReferenceCountedRuntime(Signal, Arc<InnerRcRuntime>);
 
 impl ReferenceCountedRuntime {
+    /// Initializes the logger runtime. Two tasks are immediately spawned. Failure of either task
+    /// will not crash the host application and only trigger an error log message when testing.
     pub fn new() -> Result<Self, Error> {
         #[cfg(test)]
         log::info!("initializing logger runtime");
@@ -77,9 +79,14 @@ impl ReferenceCountedRuntime {
         runtime.spawn({
             let message_tx = message_tx.clone();
             async move {
-                network_manager::NetworkManager::new(command_rx, message_tx.clone())
-                    .run()
-                    .await
+                if let Err(_err) =
+                    network_manager::NetworkManager::new(command_rx, message_tx.clone())
+                        .run()
+                        .await
+                {
+                    #[cfg(test)]
+                    log::error!("logger network manager error: {_err}");
+                }
             }
         });
         /*
@@ -93,7 +100,7 @@ impl ReferenceCountedRuntime {
                     .await
                 {
                     #[cfg(test)]
-                    log::error!("logger error: {_err:?}");
+                    log::error!("logger error: {_err}");
                 }
             }
         });
