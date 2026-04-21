@@ -243,14 +243,14 @@ impl LogWorker {
     pub fn setup_connection(&mut self) -> Result<(), Error> {
         match &self.connection_mode {
             ConnectionMode::File(path) => {
-                let stream = Self::create_buffer_write_stream(&path)?;
+                let stream = Self::create_buffer_write_stream(path)?;
                 self.write_stream = Some(stream);
                 self.connection_state = ConnectionState::Connected;
             }
             ConnectionMode::Tcp(host, port, use_ssl)
                 if self.connection_state == ConnectionState::Disconnected =>
             {
-                let stream = Self::connect_to_remote(&host, *port, *use_ssl)?;
+                let stream = Self::connect_to_remote(host, *port, *use_ssl)?;
                 self.write_stream = Some(stream);
                 self.connection_state = ConnectionState::Connected;
             }

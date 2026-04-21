@@ -266,7 +266,7 @@ impl Logger {
     /// Refer to the [`MessageBuilder`] documentation for details on how to complete and dispatch
     /// the log message.
     pub fn log<'a>(&'a self, level: log::Level) -> MessageBuilder<'a> {
-        MessageBuilder(LogMessage::log(level), &self)
+        MessageBuilder(LogMessage::log(level), self)
     }
 
     /// Log a mark to the desktop viewer.
@@ -298,7 +298,7 @@ impl log::Log for Logger {
                 record.line(),
                 Some(record.target()),
             )
-            .message(&format!("{}", record.args()));
+            .message(format!("{}", record.args()));
     }
 
     fn flush(&self) {}
