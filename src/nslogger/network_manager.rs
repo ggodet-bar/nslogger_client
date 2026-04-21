@@ -13,7 +13,7 @@ const DEFAULT_BONJOUR_SERVICE_SSL: &str = "_nslogger-ssl._tcp.";
 const RETRY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub enum BonjourServiceStatus {
-    ServiceFound(String, String, u16, bool),
+    ServiceFound(String, String, bool),
     TimedOut,
     Unresolved,
 }
@@ -24,6 +24,14 @@ pub enum BonjourServiceType {
     Custom(String, bool),
     /// Defines whether to use SSL
     Default(bool),
+}
+
+impl BonjourServiceType {
+    pub fn requires_ssl(&self) -> bool {
+        match self {
+            Self::Custom(_, use_ssl) | Self::Default(use_ssl) => *use_ssl,
+        }
+    }
 }
 
 /// Handles Bonjour service discovery, based on the commands it receives.
@@ -53,16 +61,11 @@ impl NetworkManager {
             let mut is_connected = false;
             while !is_connected {
                 match self.setup_bonjour(service_type).await? {
-                    BonjourServiceStatus::ServiceFound(
-                        _bonjour_service_name,
-                        host,
-                        port,
-                        use_ssl,
-                    ) => {
+                    BonjourServiceStatus::ServiceFound(_bonjour_service_name, host, use_ssl) => {
                         #[cfg(test)]
                         log::info!("found Bonjour service {_bonjour_service_name}");
                         self.message_tx
-                            .send(Message::ConnectToBonjourService(host, port, use_ssl))
+                            .send(Message::ConnectToBonjourService(host, use_ssl))
                             .unwrap();
                         is_connected = true;
                     }
@@ -117,14 +120,12 @@ impl NetworkManager {
         else {
             return Ok(BonjourServiceStatus::Unresolved);
         };
-        let ip_address = host_addr.ip().to_string();
         #[cfg(test)]
         log::info!("Bonjour host details {host_addr:?}");
 
         Ok(BonjourServiceStatus::ServiceFound(
             bonjour_service_name,
-            ip_address,
-            resolve_details.port,
+            host_addr.to_string(),
             use_ssl,
         ))
     }

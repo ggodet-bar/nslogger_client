@@ -31,7 +31,9 @@ impl Config {
                 .map(ConnectionMode::File)
                 .unwrap_or_default()
         } else {
-            let use_ssl = getter("NSLOG_USE_SSL").map(|v| v != "0").unwrap_or(true);
+            let use_ssl = getter("NSLOG_USE_SSL")
+                .map(|v| v != "0")
+                .unwrap_or_default();
             if let Some(val) = getter("NSLOG_HOST") {
                 val.split_once(':')
                     .map(|(host, port)| {
@@ -139,7 +141,7 @@ mod tests {
         assert_eq!(
             Config {
                 filter: log::LevelFilter::Warn,
-                mode: ConnectionMode::Tcp("127.0.0.1".to_string(), 50000, true),
+                mode: ConnectionMode::Tcp("127.0.0.1".to_string(), 50000, false),
                 flush_messages: false
             },
             Config::parse_with_getter(|key| { env.get(key).cloned() })
@@ -154,7 +156,7 @@ mod tests {
         assert_eq!(
             Config {
                 filter: log::LevelFilter::Warn,
-                mode: ConnectionMode::Tcp("example.org".to_string(), 50000, true),
+                mode: ConnectionMode::Tcp("example.org".to_string(), 50000, false),
                 flush_messages: false
             },
             Config::parse_with_getter(|key| { env.get(key).cloned() })

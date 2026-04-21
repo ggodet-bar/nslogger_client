@@ -1,17 +1,20 @@
 use std::{
     collections::VecDeque,
-    fs::File,
     io,
-    io::{BufWriter, Write},
-    net::TcpStream,
+    net::ToSocketAddrs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use openssl::{
-    self,
-    ssl::{SslConnector, SslMethod, SslStream},
+use rustls::{pki_types::ServerName, ClientConfig, RootCertStore};
+use tokio::{
+    fs::File,
+    io::{AsyncWriteExt, BufWriter},
+    net::TcpStream,
+    sync::mpsc,
 };
-use tokio::sync::mpsc;
+use tokio_rustls::{client::TlsStream, TlsConnector};
+use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::nslogger::{
     log_message::LogMessage, network_manager, network_manager::BonjourServiceType, Error, Signal,
@@ -19,7 +22,7 @@ use crate::nslogger::{
 
 #[derive(Debug)]
 pub enum Message {
-    ConnectToBonjourService(String, u16, bool),
+    ConnectToBonjourService(String, bool),
     AddLog(LogMessage, Option<Signal>),
     SwitchConnection(ConnectionMode),
 }
@@ -33,31 +36,41 @@ pub enum ConnectionMode {
 
 impl Default for ConnectionMode {
     fn default() -> Self {
-        Self::Bonjour(BonjourServiceType::Default(true))
+        Self::Bonjour(BonjourServiceType::Default(false))
+    }
+}
+
+impl ConnectionMode {
+    pub fn requires_ssl(&self) -> bool {
+        match self {
+            Self::Tcp(_, _, use_ssl) => *use_ssl,
+            Self::Bonjour(service_type) => service_type.requires_ssl(),
+            Self::File(_) => false,
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum WriteStreamWrapper {
     Tcp(TcpStream),
-    Ssl(SslStream<TcpStream>),
+    Ssl(TlsStream<TcpStream>),
     File(BufWriter<File>),
 }
 
-impl std::io::Write for WriteStreamWrapper {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+impl WriteStreamWrapper {
+    async fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         match self {
-            WriteStreamWrapper::Tcp(stream) => stream.write(buf),
-            WriteStreamWrapper::Ssl(stream) => stream.write(buf),
-            WriteStreamWrapper::File(stream) => stream.write(buf),
+            WriteStreamWrapper::Tcp(stream) => stream.write_all(buf).await,
+            WriteStreamWrapper::Ssl(stream) => stream.write_all(buf).await,
+            WriteStreamWrapper::File(stream) => stream.write_all(buf).await,
         }
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    async fn flush(&mut self) -> io::Result<()> {
         match self {
-            WriteStreamWrapper::Tcp(stream) => stream.flush(),
-            WriteStreamWrapper::Ssl(stream) => stream.flush(),
-            WriteStreamWrapper::File(stream) => stream.flush(),
+            WriteStreamWrapper::Tcp(stream) => stream.flush().await,
+            WriteStreamWrapper::Ssl(stream) => stream.flush().await,
+            WriteStreamWrapper::File(stream) => stream.flush().await,
         }
     }
 }
@@ -76,6 +89,8 @@ pub struct LogWorker {
     ready_signal: Signal,
     sequence_generator: u32,
     connection_state: ConnectionState,
+    /// Rustls client config that allows the runtime to spawn new secure connections.
+    ssl_config: Arc<ClientConfig>,
     pub connection_mode: ConnectionMode,
     pub write_stream: Option<WriteStreamWrapper>,
     pub log_messages: VecDeque<(LogMessage, Option<Signal>)>,
@@ -88,12 +103,18 @@ impl LogWorker {
         message_rx: mpsc::UnboundedReceiver<Message>,
         ready_signal: Signal,
     ) -> Self {
+        let root_store = RootCertStore::from_iter(TLS_SERVER_ROOTS.iter().cloned());
+        let ssl_config = ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let ssl_config = Arc::new(ssl_config);
         /*
-         * NOTE the worker won't process the client info message, hence the very first message
-         * is skipped.
+         * NOTE the worker won't process the client info message, hence the very first message is
+         * skipped.
          */
         Self {
             sequence_generator: 1,
+            ssl_config,
             message_rx,
             ready_signal,
             connection_mode: ConnectionMode::default(),
@@ -110,7 +131,7 @@ impl LogWorker {
         /*
          * Initial setup according to current parameters.
          */
-        self.setup_connection()?;
+        self.setup_connection().await?;
         #[cfg(test)]
         log::info!("starting log event loop");
         self.run_loop().await?;
@@ -127,7 +148,7 @@ impl LogWorker {
         nb
     }
 
-    fn handle_message(&mut self, message: Message) -> Result<(), Error> {
+    async fn handle_message(&mut self, message: Message) -> Result<(), Error> {
         #[cfg(test)]
         log::info!("received message");
         match message {
@@ -141,16 +162,17 @@ impl LogWorker {
                 #[cfg(test)]
                 log::info!("adding log {} to the queue", sequence_number);
                 self.log_messages.push_back((message, signal));
-                self.process_log_queue()?;
+                self.process_log_queue().await?;
             }
             Message::SwitchConnection(new_mode) => {
-                self.change_options(new_mode)?;
+                self.change_connection_mode(new_mode).await?;
             }
-            Message::ConnectToBonjourService(host, port, use_ssl) => {
-                let stream = Self::connect_to_remote(&host, port, use_ssl)?;
+            Message::ConnectToBonjourService(host, use_ssl) => {
+                let stream =
+                    Self::connect_to_remote(&host, use_ssl, self.ssl_config.clone()).await?;
                 self.connection_state = ConnectionState::Connected;
                 self.write_stream = Some(stream);
-                self.process_log_queue()?;
+                self.process_log_queue().await?;
             }
         }
         Ok(())
@@ -163,10 +185,10 @@ impl LogWorker {
         self.ready_signal.signal();
 
         while let Some(message) = self.message_rx.recv().await {
-            self.handle_message(message)?;
+            self.handle_message(message).await?;
         }
 
-        self.close_buffer_write_stream()?;
+        self.close_buffer_write_stream().await?;
 
         Ok(())
     }
@@ -179,14 +201,14 @@ impl LogWorker {
         self.connection_state = ConnectionState::Ready;
     }
 
-    pub fn change_options(&mut self, mode: ConnectionMode) -> Result<(), Error> {
+    pub async fn change_connection_mode(&mut self, mode: ConnectionMode) -> Result<(), Error> {
         #[cfg(test)]
         log::info!("changing options: {:?}. Closing/restarting.", mode);
         if self.write_stream.is_some() {
             self.disconnect();
         }
         self.connection_mode = mode;
-        self.setup_connection()?;
+        self.setup_connection().await?;
         Ok(())
     }
 
@@ -200,27 +222,22 @@ impl LogWorker {
         Ok(())
     }
 
-    pub fn connect_to_remote(
+    pub async fn connect_to_remote(
         host: &str,
-        port: u16,
         use_ssl: bool,
+        ssl_config: Arc<ClientConfig>,
     ) -> Result<WriteStreamWrapper, Error> {
-        let connect_string = format!("{}:{}", host, port);
+        let ip_address = host.to_socket_addrs()?.next().ok_or(Error::InvalidHost)?;
+
         #[cfg(test)]
-        log::info!("connecting to {connect_string}");
-        let stream = TcpStream::connect(connect_string)?;
+        log::info!("connecting to {ip_address}");
+        let stream = TcpStream::connect(&ip_address).await?;
         let stream = if use_ssl {
             #[cfg(test)]
             log::info!("activating SSL connection");
-
-            let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls()).unwrap();
-
-            ssl_connector_builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
-            ssl_connector_builder
-                .set_verify_callback(openssl::ssl::SslVerifyMode::NONE, |_, _| true);
-
-            let connector = ssl_connector_builder.build();
-            let stream = connector.connect("localhost", stream).unwrap();
+            let connector = TlsConnector::from(ssl_config);
+            let server_name = ServerName::try_from(host.to_owned())?;
+            let stream = connector.connect(server_name, stream).await?;
             #[cfg(test)]
             log::info!("opened SSL stream");
             WriteStreamWrapper::Ssl(stream)
@@ -240,17 +257,18 @@ impl LogWorker {
         self.sequence_generator = 1;
     }
 
-    pub fn setup_connection(&mut self) -> Result<(), Error> {
+    pub async fn setup_connection(&mut self) -> Result<(), Error> {
         match &self.connection_mode {
             ConnectionMode::File(path) => {
-                let stream = Self::create_buffer_write_stream(path)?;
+                let stream = Self::create_buffer_write_stream(path).await?;
                 self.write_stream = Some(stream);
                 self.connection_state = ConnectionState::Connected;
             }
             ConnectionMode::Tcp(host, port, use_ssl)
                 if self.connection_state == ConnectionState::Disconnected =>
             {
-                let stream = Self::connect_to_remote(host, *port, *use_ssl)?;
+                let stream =
+                    Self::connect_to_remote(host, *use_ssl, self.ssl_config.clone()).await?;
                 self.write_stream = Some(stream);
                 self.connection_state = ConnectionState::Connected;
             }
@@ -266,39 +284,39 @@ impl LogWorker {
         Ok(())
     }
 
-    fn try_reconnecting(&mut self) -> Result<(), Error> {
+    async fn try_reconnecting(&mut self) -> Result<(), Error> {
         if self.connection_state != ConnectionState::Disconnected {
             return Ok(());
         }
 
         #[cfg(test)]
         log::info!("try_reconnecting");
-        self.setup_connection()?;
+        self.setup_connection().await?;
         Ok(())
     }
 
-    pub fn create_buffer_write_stream(path: &Path) -> Result<WriteStreamWrapper, Error> {
+    pub async fn create_buffer_write_stream(path: &Path) -> Result<WriteStreamWrapper, Error> {
         #[cfg(test)]
         log::info!("creating file buffer stream to {path:?}");
-        let file_writer = BufWriter::new(File::create(path)?);
+        let file_writer = BufWriter::new(File::create(path).await?);
         Ok(WriteStreamWrapper::File(file_writer))
     }
 
-    pub fn close_buffer_write_stream(&mut self) -> Result<(), Error> {
+    pub async fn close_buffer_write_stream(&mut self) -> Result<(), Error> {
         #[cfg(test)]
         if self.write_stream.is_some() {
             log::info!("closing buffer stream");
         }
 
         if let Some(mut stream) = self.write_stream.take() {
-            stream.flush()?;
+            stream.flush().await?;
         };
         self.connection_state = ConnectionState::Disconnected;
         Ok(())
     }
 
     /// Write outstanding messages to the stream
-    fn write_messages_to_stream(&mut self) -> Result<(), Error> {
+    async fn write_messages_to_stream(&mut self) -> Result<(), Error> {
         #[cfg(test)]
         use crate::nslogger::log_message::SEQUENCE_NB_OFFSET;
         #[cfg(test)]
@@ -325,17 +343,17 @@ impl LogWorker {
                 tcp_stream,
                 message.bytes().len()
             );
-            if let Err(_err) = tcp_stream.write_all(message.bytes()) {
+            if let Err(_err) = tcp_stream.write_all(message.bytes()).await {
                 self.log_messages.push_front((message, signal));
                 #[cfg(test)]
                 log::warn!("write to stream failed: {_err:?}");
 
                 self.disconnect();
-                self.try_reconnecting()?;
+                self.try_reconnecting().await?;
                 return Ok(());
             }
             if let Some(signal) = signal {
-                tcp_stream.flush()?;
+                tcp_stream.flush().await?;
                 signal.signal();
             }
         }
@@ -343,7 +361,7 @@ impl LogWorker {
         Ok(())
     }
 
-    pub fn process_log_queue(&mut self) -> Result<(), Error> {
+    pub async fn process_log_queue(&mut self) -> Result<(), Error> {
         if self.log_messages.is_empty() {
             #[cfg(test)]
             log::info!("process_log_queue empty");
@@ -354,13 +372,13 @@ impl LogWorker {
         log::info!("process_log_queue");
 
         if self.connection_state == ConnectionState::Disconnected {
-            self.setup_connection()?;
+            self.setup_connection().await?;
         }
         if self.connection_state == ConnectionState::Connected {
             self.push_client_info_to_front_of_queue();
         }
         if self.connection_state == ConnectionState::Ready {
-            self.write_messages_to_stream()?;
+            self.write_messages_to_stream().await?;
         }
 
         #[cfg(test)]
@@ -373,9 +391,6 @@ impl Drop for LogWorker {
     fn drop(&mut self) {
         #[cfg(test)]
         log::info!("calling drop for log worker");
-        if let Some(mut stream) = self.write_stream.take() {
-            stream.flush().unwrap();
-        }
         self.disconnect();
     }
 }

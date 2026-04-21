@@ -88,9 +88,13 @@ impl ReferenceCountedRuntime {
         runtime.spawn({
             let ready_signal = ready_signal.clone();
             async move {
-                LogWorker::new(command_tx, message_rx, ready_signal)
+                if let Err(_err) = LogWorker::new(command_tx, message_rx, ready_signal)
                     .run()
                     .await
+                {
+                    #[cfg(test)]
+                    log::error!("logger error: {_err:?}");
+                }
             }
         });
         /*
