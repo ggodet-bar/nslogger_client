@@ -53,7 +53,6 @@ impl Drop for InnerRcRuntime {
     fn drop(&mut self) {
         #[cfg(test)]
         log::info!("shutting down runtime");
-        let _ = self.message_tx.downgrade();
         self.runtime.take().unwrap().shutdown_background();
     }
 }
