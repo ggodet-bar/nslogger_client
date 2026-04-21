@@ -55,8 +55,6 @@ pub enum Error {
     IO(#[from] std::io::Error),
     #[error("invalid host")]
     InvalidHost,
-    #[error("invalid file path: {_0}")]
-    InvalidPath(String),
     #[error("SSL error")]
     SSL(#[from] rustls::Error),
     #[error("invalid DNS name")]
